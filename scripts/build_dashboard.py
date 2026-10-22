@@ -203,9 +203,244 @@ def mapa_pais(m, ancho=640, alto=720, margen=12):
     return "".join(o)
 
 
+ESC = RAIZ / "outputs" / "escena3d.json"
+escena = json.loads(ESC.read_text(encoding="utf-8")) if ESC.exists() else None
+
+
+def columnas_dia(filas, campo, titulo_y, clase, ancho=300, alto=170):
+    """Barras por día: huella acumulada, huella nueva o potencia radiativa."""
+    if not filas:
+        return "<p class='vacio'>Sin series por día.</p>"
+    vals = [f[campo] for f in filas]
+    maximo = max(vals) or 1
+    izq, abajo, arriba = 44, 26, 12
+    wu, hu = ancho - izq - 8, alto - abajo - arriba
+    paso = wu / len(filas)
+    bw = min(paso * 0.66, 26)
+    o = [f'<svg viewBox="0 0 {ancho} {alto}" class="mini" role="img">']
+    for v in (0, maximo):
+        y = arriba + hu - (v / maximo) * hu
+        o.append(f'<line x1="{izq}" y1="{y:.1f}" x2="{ancho-8}" y2="{y:.1f}" '
+                 f'class="g-eje"/><text x="{izq-6}" y="{y+4:.1f}" '
+                 f'text-anchor="end" class="g-num">{n(v)}</text>')
+    for i, f in enumerate(filas):
+        x = izq + i * paso + (paso - bw) / 2
+        h = (f[campo] / maximo) * hu
+        o.append(f'<rect x="{x:.1f}" y="{arriba+hu-h:.1f}" width="{bw:.1f}" '
+                 f'height="{max(h,1):.1f}" rx="2" class="{clase}">'
+                 f'<title>{f["dia"]}: {n(f[campo], 1)} {titulo_y}</title></rect>'
+                 f'<text x="{x+bw/2:.1f}" y="{alto-8}" text-anchor="middle" '
+                 f'class="g-anio">{f["dia"][:2]}</text>')
+    o.append("</svg>")
+    return "".join(o)
+
+
+def hist_altitud(h, ancho=300, alto=170):
+    """Histograma horizontal de la altitud de los focos, en franjas de 10 m."""
+    if not h or not h.get("cuenta"):
+        return "<p class='vacio'>Sin altitudes.</p>"
+    cuenta, bordes = h["cuenta"], h["bordes"]
+    maximo = max(cuenta) or 1
+    izq, arriba = 52, 8
+    hu = alto - arriba - 18
+    bh = hu / len(cuenta)
+    o = [f'<svg viewBox="0 0 {ancho} {alto}" class="mini" role="img">']
+    for i, c in enumerate(cuenta):
+        y = arriba + hu - (i + 1) * bh
+        w = (c / maximo) * (ancho - izq - 30)
+        o.append(f'<rect x="{izq}" y="{y+1:.1f}" width="{max(w,0.6):.1f}" '
+                 f'height="{max(bh-2,1.5):.1f}" rx="1" class="b-sev">'
+                 f'<title>{bordes[i]}–{bordes[i+1]} m: {c} focos</title></rect>')
+        if i % max(1, len(cuenta) // 5) == 0:
+            o.append(f'<text x="{izq-6}" y="{y+bh:.1f}" text-anchor="end" '
+                     f'class="g-num">{bordes[i]} m</text>')
+    o.append(f'<text x="{izq}" y="{alto-4}" class="g-num">focos por franja '
+             f'de 10 m</text></svg>')
+    return "".join(o)
+
+
+if escena:
+    met = escena["metricas"]
+    graf_acum = columnas_dia(escena["por_dia"], "huella_acum_ha", "ha",
+                             "b-cob")
+    graf_frp = columnas_dia(escena["por_dia"], "frp", "MW", "b-anom")
+    graf_alt = hist_altitud(escena["histograma_altitud"])
+else:
+    met = {}
+    graf_acum = graf_frp = graf_alt = ""
+
 n24 = sum(1 for f in (nacional or {}).get("focos", []) if f["h"] <= 24)
 n72 = sum(1 for f in (nacional or {}).get("focos", []) if 24 < f["h"] <= 72)
 n7d = sum(1 for f in (nacional or {}).get("focos", []) if f["h"] > 72)
+if escena:
+    # La malla y las texturas viajan como JSON embebido; three.js arma el
+    # terreno en el navegador. Sin servidores: el HTML es autocontenido.
+    datos_3d = json.dumps({
+        "malla": escena["malla"],
+        "texturas": escena["texturas"],
+        "focos": escena["focos"],
+    }, separators=(",", ":"))
+
+    bloque_3d = f"""
+  <p>El terreno real del área analizada, con la imagen de Sentinel-2 del
+  {met['fecha_imagen']} encima. Arrastra para girar, rueda para acercar. Los puntos
+  rojos son los focos VIIRS, colocados a su altitud.</p>
+
+  <div class="modos" role="group" aria-label="Textura del terreno">
+    <button type="button" class="modo activo" data-capa="natural">Satélite</button>
+    <button type="button" class="modo" data-capa="infrarrojo">Infrarrojo</button>
+    <button type="button" class="modo" data-capa="relieve">Relieve</button>
+    <button type="button" class="modo" data-capa="severidad">dNBR</button>
+    <label class="interruptor"><input type="checkbox" id="ver-focos" checked>
+      focos VIIRS</label>
+  </div>
+  <div id="lienzo3d" class="lienzo"></div>
+  <p class="nota" id="pista3d">Exageración vertical ×2,5 para que el relieve se
+  lea; el terreno aquí es casi llano. En «dNBR», el gris es lo que quedó sin dato
+  por nubes y los tonos cálidos son la severidad creciente.</p>
+
+  <div class="cifras">
+    <div class="tarjeta"><div class="dato">{n(met['altitud_min'])}–{n(met['altitud_max'])}<span class="unidad"> m</span></div>
+      <div class="pie">altitud de los focos (mediana {n(met['altitud_mediana'])} m)</div></div>
+    <div class="tarjeta"><div class="dato">{met['pendiente_mediana']}<span class="unidad">°</span></div>
+      <div class="pie">pendiente mediana del área</div></div>
+    <div class="tarjeta"><div class="dato">{principal['clase']}</div>
+      <div class="pie">cobertura dominante de lo quemado</div></div>
+  </div>
+
+  <h3 class="sub-h">El incendio, día por día</h3>
+  <div class="tres">
+    <div><h4>Huella acumulada</h4>{graf_acum}<p class="nota">hectáreas de huella
+      VIIRS acumulada; <strong>no</strong> es área quemada.</p></div>
+    <div><h4>Potencia radiativa</h4>{graf_frp}<p class="nota">megavatios sumados
+      por día.</p></div>
+    <div><h4>Altitud de los focos</h4>{graf_alt}<p class="nota">franjas de 10 m;
+      el terreno es amazónico y casi llano.</p></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+  <script type="application/json" id="escena-3d">{datos_3d}</script>
+  <script>
+  (function () {{
+    var raiz = document.getElementById("lienzo3d");
+    if (!raiz || typeof THREE === "undefined") {{ return; }}
+    var D = JSON.parse(document.getElementById("escena-3d").textContent);
+    var M = D.malla, AN = M.ancho, AL = M.alto, EXAG = 2.5;
+
+    var ancho = raiz.clientWidth, alto = Math.round(ancho * 0.62);
+    var ren = new THREE.WebGLRenderer({{ antialias: true }});
+    ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    ren.setSize(ancho, alto);
+    raiz.appendChild(ren.domElement);
+
+    var esc = new THREE.Scene();
+    esc.background = new THREE.Color(0x120e0c);
+    var cam = new THREE.PerspectiveCamera(42, ancho / alto, 1, 60000);
+    esc.add(new THREE.AmbientLight(0xffffff, 0.85));
+    var sol = new THREE.DirectionalLight(0xffffff, 0.9);
+    sol.position.set(-1, 1.4, 1); esc.add(sol);
+
+    var geo = new THREE.PlaneGeometry(M.metros_x, M.metros_y, AN - 1, AL - 1);
+    var pos = geo.attributes.position;
+    for (var i = 0; i < pos.count; i++) {{ pos.setZ(i, M.z[i] * EXAG); }}
+    geo.computeVertexNormals();
+
+    function textura(nombre) {{
+      if (nombre === "relieve") {{ return null; }}
+      var src = D.texturas[nombre];
+      var buf = new Uint8Array(AN * AL * 4);
+      for (var k = 0, j = 0; k < AN * AL; k++) {{
+        buf[j++] = src[k * 3]; buf[j++] = src[k * 3 + 1];
+        buf[j++] = src[k * 3 + 2]; buf[j++] = 255;
+      }}
+      var t = new THREE.DataTexture(buf, AN, AL, THREE.RGBAFormat);
+      t.needsUpdate = true; t.flipY = false;
+      return t;
+    }}
+
+    var mat = new THREE.MeshLambertMaterial({{ map: textura("natural") }});
+    var malla = new THREE.Mesh(geo, mat);
+    malla.rotation.x = -Math.PI / 2;
+    esc.add(malla);
+
+    var grupo = new THREE.Group();
+    var geoF = new THREE.SphereGeometry(Math.max(M.metros_x / 190, 18), 8, 6);
+    var matF = new THREE.MeshBasicMaterial({{ color: 0xff2d00 }});
+    D.focos.forEach(function (f) {{
+      var m = new THREE.Mesh(geoF, matF);
+      m.position.set((f.u - 0.5) * M.metros_x,
+                     f.z * EXAG + M.metros_x / 160,
+                     (f.v - 0.5) * M.metros_y);
+      grupo.add(m);
+    }});
+    esc.add(grupo);
+
+    var centro = new THREE.Vector3(0, (M.zmin + M.zmax) / 2 * EXAG, 0);
+    var radio = Math.max(M.metros_x, M.metros_y);
+    var giro = 0.75, incl = 0.95, dist = radio * 1.25;
+    function situar() {{
+      cam.position.set(centro.x + dist * Math.cos(incl) * Math.cos(giro),
+                       centro.y + dist * Math.sin(incl),
+                       centro.z + dist * Math.cos(incl) * Math.sin(giro));
+      cam.lookAt(centro);
+    }}
+    situar();
+
+    var arrastra = false, px = 0, py = 0;
+    function abajo(e) {{ arrastra = true;
+      px = (e.touches ? e.touches[0] : e).clientX;
+      py = (e.touches ? e.touches[0] : e).clientY; }}
+    function mueve(e) {{
+      if (!arrastra) {{ return; }}
+      var t = e.touches ? e.touches[0] : e;
+      giro -= (t.clientX - px) * 0.006;
+      incl = Math.max(0.12, Math.min(1.45, incl + (t.clientY - py) * 0.005));
+      px = t.clientX; py = t.clientY; situar(); pinta();
+      if (e.touches) {{ e.preventDefault(); }}
+    }}
+    function arriba() {{ arrastra = false; }}
+    ren.domElement.addEventListener("mousedown", abajo);
+    window.addEventListener("mousemove", mueve);
+    window.addEventListener("mouseup", arriba);
+    ren.domElement.addEventListener("touchstart", abajo, {{ passive: true }});
+    ren.domElement.addEventListener("touchmove", mueve, {{ passive: false }});
+    window.addEventListener("touchend", arriba);
+    ren.domElement.addEventListener("wheel", function (e) {{
+      e.preventDefault();
+      dist = Math.max(radio * 0.35, Math.min(radio * 3,
+             dist * (e.deltaY > 0 ? 1.1 : 0.9)));
+      situar(); pinta();
+    }}, {{ passive: false }});
+
+    document.querySelectorAll(".modo").forEach(function (b) {{
+      b.addEventListener("click", function () {{
+        document.querySelectorAll(".modo").forEach(function (o) {{
+          o.classList.remove("activo"); }});
+        b.classList.add("activo");
+        var capa = b.dataset.capa;
+        if (mat.map) {{ mat.map.dispose(); }}
+        mat.map = textura(capa);
+        mat.color = new THREE.Color(capa === "relieve" ? 0x9a8674 : 0xffffff);
+        mat.needsUpdate = true; pinta();
+      }});
+    }});
+    var chk = document.getElementById("ver-focos");
+    chk.addEventListener("change", function () {{
+      grupo.visible = chk.checked; pinta(); }});
+
+    function pinta() {{ ren.render(esc, cam); }}
+    window.addEventListener("resize", function () {{
+      var w = raiz.clientWidth; ren.setSize(w, Math.round(w * 0.62));
+      cam.aspect = w / (w * 0.62); cam.updateProjectionMatrix(); pinta();
+    }});
+    pinta();
+  }})();
+  </script>"""
+else:
+    bloque_3d = ('<p class="aviso">La escena 3D no está disponible: falta '
+                 '<code>outputs/escena3d.json</code>. Se genera con '
+                 '<code>python scripts/exportar_3d.py</code>.</p>')
+
 mapa_pais_html = mapa_pais(nacional)
 
 mapa_html = mapa_svg(mapa)
@@ -406,6 +641,33 @@ body::before {{ content:""; position:fixed; inset:0 0 auto;
 .l-n72 {{ background:#ff9d4d; }}
 .l-n7d {{ background:#ffd9a0; }}
 
+.lienzo {{ width:100%; border:1px solid var(--linea); border-radius:4px;
+  overflow:hidden; background:var(--panel); margin:.6rem 0 .3rem;
+  cursor:grab; touch-action:none; }}
+.lienzo:active {{ cursor:grabbing; }}
+.lienzo canvas {{ display:block; width:100%; height:auto; }}
+.modos {{ display:flex; flex-wrap:wrap; gap:.4rem .5rem; align-items:center;
+  margin:.9rem 0 .2rem; }}
+.modo {{ font:600 .8rem var(--texto); color:var(--tinta-2);
+  background:var(--panel); border:1px solid var(--linea); border-radius:3px;
+  padding:.33rem .7rem; cursor:pointer; }}
+.modo:hover {{ color:var(--tinta); border-color:var(--tinta-3); }}
+.modo.activo {{ background:var(--brasa); border-color:var(--brasa);
+  color:#1a1008; }}
+.modo:focus-visible, .interruptor:focus-within {{ outline:2px solid var(--brasa);
+  outline-offset:2px; }}
+.interruptor {{ font-size:.8rem; color:var(--tinta-2); display:flex;
+  align-items:center; gap:.35rem; margin-left:.3rem; cursor:pointer; }}
+
+.tres {{ display:grid; gap:14px; margin:.8rem 0;
+  grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); }}
+.tres > div {{ border:1px solid var(--linea); border-radius:4px; padding:12px;
+  background:var(--panel); min-width:0; }}
+.tres h4 {{ margin:0 0 .2rem; font:700 .76rem var(--texto);
+  letter-spacing:.07em; text-transform:uppercase; color:var(--tinta-3); }}
+.tres .nota {{ margin:.2rem 0 0; font-size:.76rem; }}
+.mini {{ width:100%; height:auto; }}
+
 .mb {{ display:block; height:3px; margin-top:3px; background:var(--linea);
   border-radius:2px; overflow:hidden; }}
 .mb span {{ display:block; height:100%; border-radius:2px; }}
@@ -493,7 +755,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   <a href="#temporada">Temporada</a>
   <a href="#departamentos">Departamentos</a>
   <a href="#mapa">Mapa</a>
-  <a href="#incendio">El incendio</a>
+  <a href="#incendio">El incendio</a>\n  <a href="#tresd">En 3D</a>
   <a href="#metodo">Fuentes y método</a>
 </nav>
 
@@ -616,7 +878,10 @@ ol.limites li {{ margin-bottom:.65rem; }}
   <strong>No son universales</strong>: dependen del ecosistema, del sensor, de las fechas
   y de una validación de campo que acá no existe.</p>
 
-  <h2><span class="orden">06</span>El número depende del umbral</h2>
+  <h2 id="tresd"><span class="orden">06</span>El incendio sobre el terreno</h2>
+  {bloque_3d}
+
+  <h2><span class="orden">07</span>El número depende del umbral</h2>
   <p>La misma imagen, cuatro fronteras entre «quemado» y «no quemado». Reportamos
   {area['umbral_dnbr']}; las otras tres son el intervalo de lo defendible.</p>
   <div class="scroll">
@@ -638,7 +903,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
     </table>
   </div>
 
-  <h2><span class="orden">07</span>Qué se quemó, y a quién llegó</h2>
+  <h2><span class="orden">08</span>Qué se quemó, y a quién llegó</h2>
   <p>El fuego no cayó sobre territorio vacío: la clase dominante fue
   <strong>{principal['clase'].lower()}</strong>, con {n(principal['hectareas'])} ha
   ({principal['pct']:.0f} % de lo quemado).</p>
@@ -649,7 +914,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   y construcción.</p>
   {parrafo_exposicion}
 
-  <h2 id="metodo"><span class="orden">08</span>Fuentes y método</h2>
+  <h2 id="metodo"><span class="orden">09</span>Fuentes y método</h2>
   <div class="cadena">focos VIIRS S-NPP, 7 dias (NASA FIRMS)
   |- confianza >= nominal            descarta reflejos y fuentes fijas
   |- sjoin con distritos INEI         {n(nac['focos_7d'])} focos, {n(nac['distritos_con_fuego'])} distritos con fuego
@@ -700,7 +965,7 @@ cruces sobre la misma mascara de quemado
     {img['pixeles_utilizables_pct']} % del área de interés; lo tapado no entra. Las
     {n(area['hectareas'])} ha son un <strong>piso</strong>, no una estimación
     insesgada. En la Amazonía en octubre, este es el sesgo dominante.</li>
-    <li><strong>El umbral es una decisión, no un dato.</strong> Ver la sección 06.</li>
+    <li><strong>El umbral es una decisión, no un dato.</strong> Ver la sección 07.</li>
     <li><strong>La serie histórica mezcla procesamientos</strong> (SP y NRT). Mismo
     satélite, distinta validación.</li>
     <li><strong>Una edificación no es una vivienda.</strong> Open Buildings detecta
