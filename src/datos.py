@@ -409,10 +409,19 @@ OB_COLUMNAS = ["latitude", "longitude", "area_in_meters", "confidence",
                "geometry", "full_plus_code"]
 
 
-def open_buildings(area, confianza_min: float = 0.70) -> gpd.GeoDataFrame:
+def open_buildings(area, confianza_min: float = 0.70,
+                   verbose: bool = True) -> gpd.GeoDataFrame:
     """
-    Edificaciones de Google Open Buildings v3 dentro de `area` (GeoDataFrame).
-    Baja solo los tiles S2 que la tocan — pásale un distrito, no el país.
+    Edificaciones de Google Open Buildings v3 dentro de `area`.
+
+    Google particiona el mundo en celdas S2 de nivel 4 y publica una por
+    archivo, pero solo las que tienen edificaciones; el geojson de tiles trae
+    la URL exacta de cada una, asi que la usamos en vez de armar el nombre a
+    mano. Los archivos son grandes (cientos de MB), por eso se filtran por
+    caja mientras se leen en trozos, y se cachean: la segunda corrida no
+    vuelve a descargar.
+
+    Pasale un AOI, no el pais.
     """
     from shapely import wkt
 
@@ -423,17 +432,32 @@ def open_buildings(area, confianza_min: float = 0.70) -> gpd.GeoDataFrame:
     minx, miny, maxx, maxy = union.bounds
 
     tiles = gpd.read_file(_bajar(OB_TILES, CACHE / "ob_tiles.geojson"))
-    col = "tile_id" if "tile_id" in tiles.columns else tiles.columns[0]
-    necesarios = tiles[tiles.intersects(union)][col].tolist()
-    if not necesarios:
-        raise RuntimeError("Ningún tile de Open Buildings cubre esa área.")
+    toca = tiles[tiles.intersects(union)]
+    if toca.empty:
+        raise RuntimeError("Ningun tile de Open Buildings cubre esa area.")
 
-    partes = []
-    for cell in necesarios:
-        local = _bajar(OB_CSV.format(cell=cell), CACHE / f"ob_{cell}.csv.gz",
-                       timeout=1800)
+    partes, saltados = [], []
+    for _, t in toca.iterrows():
+        cell = str(t.get("tile_id", "?"))
+        url = t.get("tile_url") or OB_CSV.format(cell=cell)
+        peso = t.get("size_mb")
+        if verbose:
+            print(f"  tile {cell}"
+                  + (f" ({peso:,.0f} MB)" if pd.notna(peso) else "")
+                  + " — se descarga una sola vez y queda en cache")
+        try:
+            local = _bajar(str(url), CACHE / f"ob_{cell}.csv.gz", timeout=3600)
+        except requests.HTTPError as e:
+            codigo = getattr(e.response, "status_code", None)
+            if codigo == 404:
+                saltados.append(cell)      # Google no publico ese cuadrante
+                continue
+            raise
+
+        # El archivo trae encabezado, asi que NO se pasan nombres de columna.
         with gzip.open(local, "rt") as f:
-            for trozo in pd.read_csv(f, names=OB_COLUMNAS, chunksize=500_000):
+            for trozo in pd.read_csv(f, chunksize=500_000):
+                trozo.columns = [c.strip().lower() for c in trozo.columns]
                 trozo = trozo[(trozo.confidence >= confianza_min)
                               & trozo.longitude.between(minx, maxx)
                               & trozo.latitude.between(miny, maxy)]
@@ -445,10 +469,11 @@ def open_buildings(area, confianza_min: float = 0.70) -> gpd.GeoDataFrame:
                     crs="EPSG:4326")
                 partes.append(g[g.intersects(union)])
 
-    if saltados:
+    if saltados and verbose:
         print(f"  tiles sin archivo publicado (404), omitidos: {saltados}")
     if not partes:
-        return gpd.GeoDataFrame(columns=OB_COLUMNAS, geometry=[], crs="EPSG:4326")
+        return gpd.GeoDataFrame(columns=OB_COLUMNAS, geometry=[],
+                                crs="EPSG:4326")
     return gpd.GeoDataFrame(pd.concat(partes, ignore_index=True),
                             geometry="geometry", crs="EPSG:4326")
 

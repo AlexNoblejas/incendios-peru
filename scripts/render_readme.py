@@ -21,6 +21,7 @@ principal = cob[0] if cob else {"clase": "—", "hectareas": 0, "pct": 0}
 lider = his["mayor_anomalia"]
 
 n = lambda v, d=0: f"{v:,.{d}f}"
+SIN_EDIFICIOS = exp.get("edificaciones_1km_openbuildings") is None
 
 
 def tabla(filas, cols, alinea_num=True):
@@ -31,6 +32,30 @@ def tabla(filas, cols, alinea_num=True):
         "| " + " | ".join(c[1](f) for c in cols) + " |" for f in filas)
     return f"{cab}\n{sep}\n{cuerpo}"
 
+
+if SIN_EDIFICIOS:
+    hallazgo_3 = f"""**3 · A {exp['radio_poblacion_m'] // 1000} km del incendio viven
+{n(exp['poblacion_5km_worldpop2020'])} personas** (WorldPop 2020, celdas de 1 km).
+
+> El conteo de edificaciones expuestas con Google Open Buildings no se pudo completar en
+> esta corrida; el notebook lo intenta y sigue sin él. Está implementado en
+> `src/datos.py::open_buildings` y se agrega volviendo a correr la última sección."""
+else:
+    hallazgo_3 = f"""**3 · {n(exp['edificaciones_1km_openbuildings'])} edificaciones
+quedaron a menos de {exp['radio_viviendas_m']} m del fuego**
+({n(exp['ha_construidas_1km'], 1)} ha construidas), en un entorno donde WorldPop estima
+{n(exp['poblacion_5km_worldpop2020'])} personas a
+{exp['radio_poblacion_m'] // 1000} km. Este conteo es lo que agrega el trabajo:
+WorldPop da personas por celda de 1 km; Open Buildings da un polígono por techo."""
+
+aviso_activo = ""
+if img.get("fuego_activo_en_imagen_posterior"):
+    aviso_activo = (
+        "\n> ⚠ **La imagen posterior es del mismo día en que el incendio seguía "
+        "detectándose.** La toma captura el fuego en curso, así que lo que ardió después "
+        "no aparece: la cifra de hectáreas es un piso adicional por esta razón, además "
+        "de por las nubes. Es la misma salvedad que el ejemplo de clase marcó como "
+        "«fuego activo».\n")
 
 severidad = tabla(
     [s for s in area["por_severidad"] if s["hectareas"] > 0],
@@ -115,12 +140,7 @@ que **no** es área quemada— daba {n(inc['huella_viirs_ha'])} ha.
 **2 · Lo que ardió fue sobre todo {principal['clase'].lower()}:**
 {n(principal['hectareas'])} ha, el {principal['pct']:.0f} % de la superficie quemada.
 
-**3 · {n(exp['edificaciones_1km_openbuildings'])} edificaciones quedaron a menos de
-{exp['radio_viviendas_m']} m del fuego** ({n(exp['ha_construidas_1km'], 1)} ha
-construidas), en un entorno donde WorldPop estima
-{n(exp['poblacion_5km_worldpop2020'])} personas a {exp['radio_poblacion_m'] // 1000} km.
-Este conteo es lo que agrega el trabajo: WorldPop da personas por celda de 1 km;
-Open Buildings da un polígono por techo.
+{hallazgo_3}
 
 ### Y el contexto: ¿es excepcional?
 
@@ -186,12 +206,13 @@ Sentinel-2 L2A, grilla común UTM 18S a {img['resolucion_m']} m
 cruces sobre la misma máscara de quemado
   └─ ESA WorldCover con like= la escena   misma grilla, nearest-neighbor
   └─ WorldPop, anillo {exp['radio_poblacion_m'] // 1000} km                 {n(exp['poblacion_5km_worldpop2020'])} personas
-  └─ Open Buildings, anillo {exp['radio_viviendas_m']} m        {n(exp['edificaciones_1km_openbuildings'])} edificaciones
+  └─ Open Buildings, anillo {exp['radio_viviendas_m']} m        {"no disponible en esta corrida" if SIN_EDIFICIOS else f"{n(exp['edificaciones_1km_openbuildings'])} edificaciones"}
 ```
 
 Todo en [`notebooks/incendios_manantay.ipynb`](notebooks/incendios_manantay.ipynb);
 las fuentes, en [`src/datos.py`](src/datos.py).
 
+{aviso_activo}
 ### Las imágenes candidatas, con su nubosidad
 
 Las dos cifras son distintas y por eso se reportan las dos: la de la escena cubre
@@ -251,6 +272,9 @@ en la primera celda del notebook.
    detecta techos —galpones, colegios y corrales cuentan igual—, su cobertura cae en
    bosque denso, y la cobertura del suelo tiene cinco años de desfase. Los dos sesgos van
    hacia abajo, justo en los territorios que más interesan.
+7. **El dNBR mide un cambio, no una causa.** Una cosecha o un desmonte entre las dos
+   fechas produce la misma caída del índice que el fuego. Lo que ata el cambio al
+   incendio es que coincide espacialmente con los focos VIIRS, no el índice por sí solo.
 
 ---
 

@@ -24,6 +24,10 @@ serie = {int(k): v for k, v in his["serie_anual"].items()}
 
 n = lambda v, d=0: f"{v:,.{d}f}".replace(",", " ")
 
+# Open Buildings puede no haberse podido traer; el tablero lo dice en vez
+# de inventar la cifra.
+SIN_EDIFICIOS = exp.get("edificaciones_1km_openbuildings") is None
+
 
 def barras(filas, eti, val, clase, sufijo=" ha", pad=168, ancho=640):
     """Barras horizontales SVG, a escala, con la etiqueta dentro del gráfico."""
@@ -95,6 +99,41 @@ anom_svg = barras(
     [{"d": d["departamento"].title(), "v": d["diferencia"]}
      for d in his["por_departamento"][:8]],
     "d", "v", "b-anom", sufijo=" focos", pad=120)
+
+if SIN_EDIFICIOS:
+    # La capa no se pudo traer: en su lugar va una cifra que sí tenemos, y el
+    # hueco se dice en el texto en vez de rellenarse.
+    tarjeta_edificios = f"""<div class="tarjeta">
+      <div class="dato">{n(inc["incendios_en_distrito"])}</div>
+      <div class="pie">incendios distintos en el distrito</div>
+    </div>"""
+    parrafo_exposicion = f"""<p>Sobre la exposición: a
+  {exp["radio_poblacion_m"] // 1000} km del incendio viven
+  <strong>{n(exp["poblacion_5km_worldpop2020"])} personas</strong> (WorldPop 2020,
+  celdas de 1 km).</p>
+  <p class="aviso">El conteo de edificaciones con Google Open Buildings no se completó
+  en esta corrida. Está implementado y el notebook lo intenta; se omite en vez de
+  rellenarse.</p>"""
+else:
+    tarjeta_edificios = f"""<div class="tarjeta">
+      <div class="dato">{n(exp["edificaciones_1km_openbuildings"])}</div>
+      <div class="pie">edificaciones a menos de {exp["radio_viviendas_m"]} m
+      del fuego</div>
+    </div>"""
+    parrafo_exposicion = f"""<p>Sobre la exposición:
+  <strong>{n(exp["edificaciones_1km_openbuildings"])} edificaciones</strong>
+  ({n(exp["ha_construidas_1km"], 1)} ha construidas) quedaron a menos de
+  {exp["radio_viviendas_m"]} m del fuego, de {n(exp["edificaciones_aoi"])} en el área de
+  interés. Esa cifra es el aporte de este trabajo: WorldPop da personas por celda de
+  1 km, Google Open Buildings da un polígono por techo.</p>"""
+
+aviso_activo = ""
+if img.get("fuego_activo_en_imagen_posterior"):
+    aviso_activo = """<p class="aviso"><strong>Fuego activo en la imagen
+  posterior.</strong> La toma es del mismo día en que el incendio seguía detectándose,
+  así que lo que ardió después no aparece: las hectáreas son un piso adicional por esta
+  razón, además de por las nubes. Es la misma salvedad que el ejemplo de clase marcó
+  como «fuego activo».</p>"""
 
 sens_filas = "".join(
     f'<tr class="{"destacada" if abs(s["umbral dNBR"] - area["umbral_dnbr"]) < 1e-9 else ""}">'
@@ -245,10 +284,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
       <div class="dato acento">{his['variacion_pct']:+.0f}<span class="unidad"> %</span></div>
       <div class="pie">focos de 2026 vs. promedio 2012–2025, misma ventana</div>
     </div>
-    <div class="tarjeta">
-      <div class="dato">{n(exp['edificaciones_1km_openbuildings'])}</div>
-      <div class="pie">edificaciones a menos de {exp['radio_viviendas_m']} m del fuego</div>
-    </div>
+    {tarjeta_edificios}
     <div class="tarjeta">
       <div class="dato">{n(exp['poblacion_5km_worldpop2020'])}</div>
       <div class="pie">personas a {exp['radio_poblacion_m'] // 1000} km · WorldPop 2020</div>
@@ -330,6 +366,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   distintas y por eso se reportan las dos: la de la escena cubre 110 × 110 km, la del
   área de interés es la que de verdad afecta al incendio. <strong>La elección se hizo
   por la segunda</strong>, no por la primera.</p>
+  {aviso_activo}
   <div class="scroll">
     <table>
       <thead><tr><th>Fecha</th><th class="num">Nube de la escena</th>
@@ -347,12 +384,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   remuestreo nearest-neighbor por ser categórico. Es de 2021 y el fuego de 2026: cinco
   años de frente agrícola en Ucayali desfasan la clasificación, subestimando agricultura
   y construcción.</p>
-  <p>Sobre la exposición: <strong>{n(exp['edificaciones_1km_openbuildings'])}
-  edificaciones</strong> ({n(exp['ha_construidas_1km'], 1)} ha construidas) quedaron a
-  menos de {exp['radio_viviendas_m']} m del fuego, de
-  {n(exp['edificaciones_aoi'])} en el área de interés. Esa cifra es el aporte de este
-  trabajo: WorldPop da personas por celda de 1 km, Google Open Buildings da un polígono
-  por techo.</p>
+  {parrafo_exposicion}
 
   <h2><span class="orden">07</span>Fuentes y método</h2>
   <div class="cadena">focos VIIRS S-NPP, 7 dias (NASA FIRMS)
@@ -377,7 +409,7 @@ Sentinel-2 L2A, grilla comun UTM 18S a {img['resolucion_m']} m
 cruces sobre la misma mascara de quemado
   |- ESA WorldCover con like= la escena, nearest-neighbor
   |- WorldPop 1 km, anillo {exp['radio_poblacion_m'] // 1000} km            {n(exp['poblacion_5km_worldpop2020'])} personas
-  |- Open Buildings, anillo {exp['radio_viviendas_m']} m      {n(exp['edificaciones_1km_openbuildings'])} edificaciones</div>
+  |- Open Buildings, anillo {exp['radio_viviendas_m']} m      {"no disponible en esta corrida" if SIN_EDIFICIOS else f"{n(exp['edificaciones_1km_openbuildings'])} edificaciones"}</div>
 
   <p class="nota">Todas las fuentes son públicas. La única que pide clave es FIRMS, y se
   lee de <code>.env</code>, nunca del código. Todo corre en CPU.</p>
