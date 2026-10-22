@@ -24,3 +24,8 @@ python scripts/render_readme.py
 
 Ninguna fuente pide clave ni pago. Todo corre en CPU. Los datos se descargan solos
 a `data/` (ignorada por git).
+
+## Ejecutar en Windows
+
+Doble clic en `EJECUTAR.bat`. Instala dependencias, corre el notebook, y genera
+el README definitivo y `outputs/dashboard.html`.
