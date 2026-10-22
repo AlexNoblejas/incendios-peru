@@ -1,0 +1,10 @@
+# datos pesados: se descargan solos
+data/*
+!data/.gitkeep
+*.tif
+*.tiff
+*.csv.gz
+.ipynb_checkpoints/
+__pycache__/
+.venv/
+.env
