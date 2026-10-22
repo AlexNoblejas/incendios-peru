@@ -92,6 +92,92 @@ def columnas_serie(serie, destacar, ancho=640, alto=210):
     return "".join(o)
 
 
+# ---------------------------------------------------------------------------
+# El mapa: SVG dibujado desde las geometrias reales. Sin teselas externas, asi
+# que funciona igual abierto en local o publicado.
+# ---------------------------------------------------------------------------
+MAPA = RAIZ / "outputs" / "mapa_datos.json"
+mapa = json.loads(MAPA.read_text(encoding="utf-8")) if MAPA.exists() else None
+
+
+def mapa_svg(m, ancho=640, alto=560, margen=14):
+    if not m:
+        return "<p class='vacio'>Falta outputs/mapa_datos.json.</p>"
+
+    x0, y0, x1, y1 = m["limites"]
+    escala = min((ancho - 2 * margen) / (x1 - x0),
+                 (alto - 2 * margen) / (y1 - y0))
+    dx = margen + ((ancho - 2 * margen) - (x1 - x0) * escala) / 2
+    dy = margen + ((alto - 2 * margen) - (y1 - y0) * escala) / 2
+    # en pantalla la y crece hacia abajo; en el terreno, hacia arriba
+    px = lambda x: dx + (x - x0) * escala
+    py = lambda y: dy + (y1 - y) * escala
+    camino = lambda anillo: ("M" + "L".join(
+        f"{px(x):.1f},{py(y):.1f}" for x, y in anillo) + "Z")
+
+    o = [f'<svg viewBox="0 0 {ancho} {alto}" class="mapa" role="img" '
+         f'aria-label="Focos de calor e incendios en Manantay">']
+    o.append('<rect width="100%" height="100%" class="m-fondo"/>')
+
+    for anillo in m["distrito"]["anillos"]:
+        o.append(f'<path d="{camino(anillo)}" class="m-distrito"/>')
+
+    for inc_ in m["incendios"]:
+        clase = "m-huella-pri" if inc_["principal"] else "m-huella"
+        titulo = (f'incendio {inc_["id"]} · {inc_["n_focos"]} focos · '
+                  f'{inc_["frp"]:,.0f} MW · {inc_["ha"]:,.0f} ha de huella · '
+                  f'{inc_["horas"]:.0f} h')
+        for anillo in inc_["anillos"]:
+            o.append(f'<path d="{camino(anillo)}" class="{clase}">'
+                     f'<title>{titulo}</title></path>')
+
+    for anillo in m.get("anillo_1km", []):
+        o.append(f'<path d="{camino(anillo)}" class="m-anillo"/>')
+
+    ax0, ay0, ax1, ay1 = m["aoi"]
+    o.append(f'<rect x="{px(ax0):.1f}" y="{py(ay1):.1f}" '
+             f'width="{(ax1-ax0)*escala:.1f}" height="{(ay1-ay0)*escala:.1f}" '
+             f'class="m-aoi"><title>Área analizada con Sentinel-2</title></rect>')
+
+    # el color codifica el dia de deteccion y el radio, la potencia radiativa
+    for f in m["focos"]:
+        r = 1.8 + min(f["frp"], 40) / 40 * 3.4
+        clase = f'm-dia{min(f.get("dia", 0), 2)}'
+        o.append(f'<circle cx="{px(f["x"]):.1f}" cy="{py(f["y"]):.1f}" '
+                 f'r="{r:.1f}" class="{clase}">'
+                 f'<title>{f["cuando"]} UTC · FRP {f["frp"]:,.1f} MW</title>'
+                 f'</circle>')
+
+    # escala grafica de 5 km
+    km = 5000 * escala
+    bx, by = ancho - margen - km, alto - margen - 8
+    o.append(f'<line x1="{bx:.1f}" y1="{by:.1f}" x2="{bx+km:.1f}" '
+             f'y2="{by:.1f}" class="m-escala"/>'
+             f'<text x="{bx+km/2:.1f}" y="{by-6:.1f}" text-anchor="middle" '
+             f'class="m-escala-eti">5 km</text>')
+    o.append("</svg>")
+    return "".join(o)
+
+
+mapa_html = mapa_svg(mapa)
+inc_radio = exp["radio_viviendas_m"]
+
+# un item de leyenda por dia con detecciones; el tamano del punto es el FRP
+leyenda_dias = "".join(
+    f'<span><i class="l-d{min(i, 2)}"></i>{d}</span>'
+    for i, d in enumerate((mapa or {}).get("dias", []))) + \
+    '<span class="l-nota">tamaño del punto = potencia radiativa</span>' 
+
+# la figura del área quemada va incrustada: el tablero queda autocontenido
+FIG = RAIZ / "figuras" / "05_area_quemada.png"
+if FIG.exists():
+    import base64
+    b64 = base64.b64encode(FIG.read_bytes()).decode()
+    figura_quemada = (f'<img src="data:image/png;base64,{b64}" '
+                      f'alt="Superficie quemada según dNBR" class="figura">')
+else:
+    figura_quemada = ""
+
 sev_svg = barras(sev, "clase", "hectareas", "b-sev")
 cob_svg = barras(cob, "clase", "hectareas", "b-cob")
 serie_svg = columnas_serie(serie, 2026)
@@ -236,6 +322,44 @@ strong {{ color:var(--tinta); }}
 .g-anio {{ font:500 10.5px var(--texto); fill:var(--tinta-3); }}
 .g-anio-foco {{ fill:var(--brasa); font-weight:700; }}
 
+.mapa {{ width:100%; height:auto; margin:.9rem 0 .4rem;
+  border:1px solid var(--linea); border-radius:4px; }}
+.m-fondo {{ fill:var(--panel); }}
+.m-distrito {{ fill:var(--panel-2); stroke:var(--tinta-3); stroke-width:1.1; }}
+.m-huella {{ fill:var(--brasa-2); fill-opacity:.30; stroke:var(--brasa-2);
+  stroke-width:.7; }}
+.m-huella-pri {{ fill:var(--brasa); fill-opacity:.42; stroke:var(--brasa);
+  stroke-width:1.1; }}
+.m-anillo {{ fill:none; stroke:var(--brasa); stroke-width:1.1;
+  stroke-dasharray:5 4; }}
+.m-aoi {{ fill:none; stroke:var(--frio); stroke-width:1.1;
+  stroke-dasharray:3 3; }}
+.m-dia0 {{ fill:#ffd9a0; fill-opacity:.9; }}
+.m-dia1 {{ fill:#ff9d4d; fill-opacity:.9; }}
+.m-dia2 {{ fill:#e02200; fill-opacity:.95; }}
+.m-escala {{ stroke:var(--tinta-2); stroke-width:1.6; }}
+.m-escala-eti {{ font:600 10.5px var(--texto); fill:var(--tinta-2); }}
+.mapa path, .mapa circle, .mapa rect {{ transition:none; }}
+.mapa circle:hover {{ stroke:var(--tinta); stroke-width:1; }}
+
+.leyenda {{ display:flex; flex-wrap:wrap; gap:.5rem 1.1rem; font-size:.78rem;
+  color:var(--tinta-2); margin:.1rem 0 .7rem; }}
+.leyenda span {{ display:flex; align-items:center; gap:.4rem; }}
+.leyenda i {{ width:12px; height:12px; border-radius:50%; flex:none; }}
+.leyenda .l-nota {{ color:var(--tinta-3); font-style:italic; }}
+.l-d0 {{ background:#ffd9a0; }}
+.l-d1 {{ background:#ff9d4d; }}
+.l-d2 {{ background:#e02200; }}
+.l-pri {{ background:var(--brasa); opacity:.55; border-radius:2px !important; }}
+.l-hue {{ background:var(--brasa-2); opacity:.4; border-radius:2px !important; }}
+.l-anillo {{ border:1.5px dashed var(--brasa); border-radius:2px !important; }}
+.l-aoi {{ border:1.5px dashed var(--frio); border-radius:2px !important; }}
+
+.figura {{ width:100%; height:auto; border:1px solid var(--linea);
+  border-radius:4px; margin:.7rem 0 .3rem; background:var(--panel); }}
+h3.sub-h {{ font-family:var(--display); font-size:1.05rem; font-weight:600;
+  color:var(--tinta); text-transform:none; letter-spacing:0;
+  margin:1.9rem 0 .2rem; }}
 .scroll {{ overflow-x:auto; margin:.8rem 0; }}
 table {{ border-collapse:collapse; width:100%; font-size:.9rem; }}
 th,td {{ text-align:left; padding:.45rem .7rem; border-bottom:1px solid var(--linea);
@@ -329,7 +453,28 @@ ol.limites li {{ margin-bottom:.65rem; }}
     </table>
   </div>
 
-  <h2><span class="orden">04</span>Atención prioritaria · el incendio medido</h2>
+  <h2><span class="orden">04</span>El mapa</h2>
+  <p>Los {n(inc['focos_en_distrito'])} focos de la semana dentro de Manantay, agrupados
+  en {inc['incendios_en_distrito']} incendios. El tamaño de cada punto es su potencia
+  radiativa; pasa el cursor para ver la hora y los megavatios.</p>
+  {mapa_html}
+  <div class="leyenda">
+    {leyenda_dias}
+    <span><i class="l-pri"></i>huella del incendio principal</span>
+    <span><i class="l-hue"></i>otras huellas VIIRS</span>
+    <span><i class="l-anillo"></i>anillo de {inc_radio} m</span>
+    <span><i class="l-aoi"></i>área analizada con Sentinel-2</span>
+  </div>
+  <p class="nota">Dibujado desde las geometrías reales en UTM 18S, sin mapa base: el
+  tablero no depende de ningún servidor de teselas. El mapa navegable, con fondo
+  satelital, está en <code>outputs/mapa_manantay.html</code>.</p>
+
+  <h3 class="sub-h">Lo que midió Sentinel-2</h3>
+  {figura_quemada}
+  <p class="nota">En amarillo, los píxeles con dNBR ≥ {area['umbral_dnbr']}. En blanco,
+  lo que quedó bajo nube en alguna de las dos fechas y por tanto no entra al cálculo.</p>
+
+  <h2><span class="orden">05</span>Atención prioritaria · el incendio medido</h2>
   <p>En Manantay, {inc['focos_en_distrito']} focos se agruparon en
   <strong>{inc['incendios_en_distrito']} incendios</strong> con la regla de ≤ 1 km y
   ≤ 48 h. El de mayor energía concentró {inc['n_focos']} focos y
@@ -353,7 +498,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   <strong>No son universales</strong>: dependen del ecosistema, del sensor, de las fechas
   y de una validación de campo que acá no existe.</p>
 
-  <h2><span class="orden">05</span>El número depende del umbral</h2>
+  <h2><span class="orden">06</span>El número depende del umbral</h2>
   <p>La misma imagen, cuatro fronteras entre «quemado» y «no quemado». Reportamos
   {area['umbral_dnbr']}; las otras tres son el intervalo de lo defendible.</p>
   <div class="scroll">
@@ -375,7 +520,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
     </table>
   </div>
 
-  <h2><span class="orden">06</span>Qué se quemó, y a quién llegó</h2>
+  <h2><span class="orden">07</span>Qué se quemó, y a quién llegó</h2>
   <p>El fuego no cayó sobre territorio vacío: la clase dominante fue
   <strong>{principal['clase'].lower()}</strong>, con {n(principal['hectareas'])} ha
   ({principal['pct']:.0f} % de lo quemado).</p>
@@ -386,7 +531,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   y construcción.</p>
   {parrafo_exposicion}
 
-  <h2><span class="orden">07</span>Fuentes y método</h2>
+  <h2><span class="orden">08</span>Fuentes y método</h2>
   <div class="cadena">focos VIIRS S-NPP, 7 dias (NASA FIRMS)
   |- confianza >= nominal            descarta reflejos y fuentes fijas
   |- sjoin con distritos INEI         {n(nac['focos_7d'])} focos, {n(nac['distritos_con_fuego'])} distritos con fuego
@@ -437,7 +582,7 @@ cruces sobre la misma mascara de quemado
     {img['pixeles_utilizables_pct']} % del área de interés; lo tapado no entra. Las
     {n(area['hectareas'])} ha son un <strong>piso</strong>, no una estimación
     insesgada. En la Amazonía en octubre, este es el sesgo dominante.</li>
-    <li><strong>El umbral es una decisión, no un dato.</strong> Ver la sección 05.</li>
+    <li><strong>El umbral es una decisión, no un dato.</strong> Ver la sección 06.</li>
     <li><strong>La serie histórica mezcla procesamientos</strong> (SP y NRT). Mismo
     satélite, distinta validación.</li>
     <li><strong>Una edificación no es una vivienda.</strong> Open Buildings detecta

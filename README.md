@@ -2,7 +2,7 @@
 
 **Ciencia de Datos con Python — Diplomatura QLAB · Alexander Noblejas**
 
-Corte de datos: **2026-10-22 02:00 UTC**
+Corte de datos: **2026-10-22 02:07 UTC**
 
 Trabajo académico. No reemplaza los reportes del COEN, INDECI, SERFOR ni SERNANP.
 
@@ -146,7 +146,7 @@ Las dos cifras son distintas y por eso se reportan las dos: la de la escena cubr
 | Clase | dNBR | Hectáreas |
 |---|---:|---:|
 | Rebrote | −∞ – -0.10 | 212 |
-| Sin cambio | -0.10 – 0.10 | 6,152 |
+| Sin cambio | -0.10 – 0.10 | 6,153 |
 | Severidad baja | 0.10 – 0.27 | 1,503 |
 | Severidad moderada-baja | 0.27 – 0.44 | 584 |
 | Severidad moderada-alta | 0.44 – 0.66 | 305 |
@@ -161,7 +161,7 @@ en la primera celda del notebook.
 | Umbral | Hectáreas |
 |---|---:|
 | dNBR ≥ 0.10 | 2,394 |
-| dNBR ≥ 0.27  ← **el nuestro** | 892 |
+| dNBR ≥ 0.27  ← **el nuestro** | 891 |
 | dNBR ≥ 0.44 | 307 |
 | dNBR ≥ 0.66 | 3 |
 

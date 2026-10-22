@@ -3,7 +3,7 @@
   "provincia": "CORONEL PORTILLO",
   "departamento": "UCAYALI",
   "ubigeo": "250107",
-  "corte": "2026-10-22 02:00 UTC",
+  "corte": "2026-10-22 02:07 UTC",
   "nacional": {
     "focos_7d": 4380,
     "ventana": [
@@ -330,55 +330,55 @@
         "clase": "Rebrote",
         "dnbr_min": null,
         "dnbr_max": -0.1,
-        "hectareas": 211.7
+        "hectareas": 211.68
       },
       {
         "clase": "Sin cambio",
         "dnbr_min": -0.1,
         "dnbr_max": 0.1,
-        "hectareas": 6152.5
+        "hectareas": 6152.52
       },
       {
         "clase": "Severidad baja",
         "dnbr_min": 0.1,
         "dnbr_max": 0.27,
-        "hectareas": 1502.7
+        "hectareas": 1502.68
       },
       {
         "clase": "Severidad moderada-baja",
         "dnbr_min": 0.27,
         "dnbr_max": 0.44,
-        "hectareas": 584.2
+        "hectareas": 584.16
       },
       {
         "clase": "Severidad moderada-alta",
         "dnbr_min": 0.44,
         "dnbr_max": 0.66,
-        "hectareas": 304.7
+        "hectareas": 304.68
       },
       {
         "clase": "Severidad alta",
         "dnbr_min": 0.66,
         "dnbr_max": null,
-        "hectareas": 2.6
+        "hectareas": 2.64
       }
     ],
     "sensibilidad_umbral": [
       {
         "umbral dNBR": 0.1,
-        "hectáreas": 2394.2
+        "hectáreas": 2394.16
       },
       {
         "umbral dNBR": 0.27,
-        "hectáreas": 891.5
+        "hectáreas": 891.48
       },
       {
         "umbral dNBR": 0.44,
-        "hectáreas": 307.3
+        "hectáreas": 307.32
       },
       {
         "umbral dNBR": 0.66,
-        "hectáreas": 2.6
+        "hectáreas": 2.64
       }
     ]
   },
