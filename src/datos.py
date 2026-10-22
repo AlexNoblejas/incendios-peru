@@ -300,7 +300,12 @@ def worldcover(bbox=None, resolucion: int = 20, like=None):
 
     items = list(catalogo().search(
         collections=["esa-worldcover"], bbox=caja).items())
-    items = [i for i in items if i.datetime.year == 2021] or items
+    # los items de WorldCover no traen `datetime`, traen un rango; el anio
+    # sale de start_datetime
+    def _anio(i):
+        d = i.datetime or i.properties.get("start_datetime", "")
+        return getattr(d, "year", None) or int(str(d)[:4] or 0)
+    items = [i for i in items if _anio(i) == 2021] or items
 
     if like is not None:
         ds = odc.stac.load(items, bands=["map"], like=like,
@@ -440,6 +445,8 @@ def open_buildings(area, confianza_min: float = 0.70) -> gpd.GeoDataFrame:
                     crs="EPSG:4326")
                 partes.append(g[g.intersects(union)])
 
+    if saltados:
+        print(f"  tiles sin archivo publicado (404), omitidos: {saltados}")
     if not partes:
         return gpd.GeoDataFrame(columns=OB_COLUMNAS, geometry=[], crs="EPSG:4326")
     return gpd.GeoDataFrame(pd.concat(partes, ignore_index=True),
@@ -482,26 +489,23 @@ def map_key() -> str:
     return clave
 
 
-def focos_ventana(desde: str, dias: int = 10, anio_reciente: int = 2026,
-                  area: str = AREA_PERU) -> pd.DataFrame:
-    """
-    Focos en una ventana de hasta 10 dias (limite del servicio), para el
-    Peru. `desde` en formato YYYY-MM-DD.
+# El API por area admite DAY_RANGE de 1 a 5. Una ventana mas larga se arma
+# pidiendo tramos consecutivos de 5 dias.
+FIRMS_TRAMO_MAX = 5
 
-    Devuelve tambien la columna `procesamiento` (SP o NRT), para que la
-    comparacion historica nunca mezcle sensores sin decirlo.
-    """
+
+def _tramo(desde: str, dias: int, anio_reciente: int, area: str) -> pd.DataFrame:
     anio = int(desde[:4])
     src = FIRMS_RECIENTE if anio >= anio_reciente else FIRMS_ARCHIVO
     destino = CACHE / f"firms_area_{src}_{desde}_{dias}d.csv"
 
     if not destino.exists():
         url = FIRMS_AREA.format(key=map_key(), src=src, area=area,
-                                dias=min(dias, 10), desde=desde)
+                                dias=dias, desde=desde)
         r = requests.get(url, timeout=300)
         r.raise_for_status()
         cuerpo = r.text
-        if len(cuerpo) < 60 or "latitude" not in cuerpo[:200].lower():
+        if "latitude" not in cuerpo[:300].lower():
             raise RuntimeError(f"FIRMS devolvio algo inesperado: {cuerpo[:200]}")
         destino.write_text(cuerpo, encoding="utf-8")
 
@@ -510,6 +514,32 @@ def focos_ventana(desde: str, dias: int = 10, anio_reciente: int = 2026,
     df["procesamiento"] = "NRT" if src.endswith("NRT") else "SP"
     df["anio"] = anio
     return df
+
+
+def focos_ventana(desde: str, dias: int = 10, anio_reciente: int = 2026,
+                  area: str = AREA_PERU) -> pd.DataFrame:
+    """
+    Focos en una ventana que empieza en `desde` (YYYY-MM-DD) y dura `dias`.
+
+    El servicio tope es de 5 dias por consulta, asi que una ventana mayor se
+    arma con tramos consecutivos. Devuelve la columna `procesamiento` (SP o
+    NRT) para que la comparacion historica nunca mezcle sensores sin decirlo.
+    """
+    inicio = pd.Timestamp(desde)
+    partes, restan, cursor = [], dias, inicio
+    while restan > 0:
+        tramo = min(restan, FIRMS_TRAMO_MAX)
+        partes.append(_tramo(cursor.strftime("%Y-%m-%d"), tramo,
+                             anio_reciente, area))
+        cursor += pd.Timedelta(days=tramo)
+        restan -= tramo
+
+    df = pd.concat(partes, ignore_index=True)
+    # los tramos pueden solaparse en el borde: un foco es unico por
+    # coordenada, fecha y hora
+    llaves = [c for c in ("latitude", "longitude", "acq_date", "acq_time")
+              if c in df.columns]
+    return df.drop_duplicates(subset=llaves).reset_index(drop=True)
 
 
 def serie_historica(mes: int, dia: int, dias: int = 10,

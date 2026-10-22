@@ -64,9 +64,35 @@ def t_worldpop():
 def t_openbuildings():
     import geopandas as gpd
     from shapely.geometry import box
+    tiles = gpd.read_file(datos._bajar(datos.OB_TILES,
+                                       datos.CACHE / "ob_tiles.geojson"))
+    print(f"    columnas del geojson de tiles: {list(tiles.columns)}")
     aoi = gpd.GeoDataFrame(geometry=[box(*BBOX)], crs="EPSG:4326")
+    toca = tiles[tiles.intersects(aoi.geometry.iloc[0])]
+    print(f"    tiles que tocan el AOI: {len(toca)}")
+    if len(toca):
+        print(toca.drop(columns="geometry").head(3).to_string(index=False))
     e = datos.open_buildings(aoi)
     return f"{len(e):,} edificaciones en el AOI"
+
+
+def t_nubes_todas():
+    """Lo que de verdad decide el resultado: cuanta nube hay en CADA escena."""
+    import pandas as pd
+    its = datos.buscar_sentinel2(BBOX, "2026-08-20", "2026-10-21", nubes_max=100)
+    filas = []
+    for it in its:
+        try:
+            d = datos.leer_bandas(it, BBOX, 20)
+            filas.append({"fecha": it.datetime.date(),
+                          "escena_%": it.properties.get("eo:cloud_cover"),
+                          "AOI_invalido_%": round(datos.pct_nubes(d), 1)})
+        except Exception as e:
+            filas.append({"fecha": it.datetime.date(), "escena_%": None,
+                          "AOI_invalido_%": f"error {type(e).__name__}"})
+    t = pd.DataFrame(filas)
+    print(t.to_string(index=False))
+    return f"{len(t)} escenas evaluadas sobre el AOI"
 
 
 for nombre, fn in [("FIRMS 7 dias", t_firms_7d),
@@ -75,7 +101,8 @@ for nombre, fn in [("FIRMS 7 dias", t_firms_7d),
                    ("Leer Sentinel-2 (odc-stac)", t_leer),
                    ("ESA WorldCover (misma grilla)", t_worldcover),
                    ("WorldPop", t_worldpop),
-                   ("Google Open Buildings", t_openbuildings)]:
+                   ("Google Open Buildings", t_openbuildings),
+                   ("Nubes de TODAS las escenas", t_nubes_todas)]:
     probar(nombre, fn)
 
 print("\n" + "=" * 60)

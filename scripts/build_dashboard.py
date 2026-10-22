@@ -1,8 +1,9 @@
 """
 Construye outputs/dashboard.html a partir de outputs/hallazgos.json.
 
-Página autocontenida: sin librerías, sin llamadas externas salvo la fuente.
-Las barras son SVG dibujadas a escala desde los mismos números del JSON.
+Página autocontenida: sin librerías ni llamadas externas salvo la fuente. Las
+barras son SVG dibujadas a escala desde los mismos números del JSON, así que
+ninguna cifra del tablero está escrita a mano.
 
     python scripts/build_dashboard.py
 """
@@ -13,178 +14,310 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 H = json.loads((RAIZ / "outputs" / "hallazgos.json").read_text(encoding="utf-8"))
 
-inc, img, area, exp, foc = (H["incendio"], H["imagenes"], H["area_quemada"],
-                            H["exposicion"], H["focos"])
+nac, his, inc = H["nacional"], H["historico"], H["incendio"]
+img, area, exp = H["imagenes"], H["area_quemada"], H["exposicion"]
 cob = [c for c in H["que_se_quemo"] if c["hectareas"] > 0][:6]
-sev = [s for s in area["por_severidad"]
-       if s["hectareas"] > 0 and "Severidad" in s["clase"]]
-sens = area["sensibilidad_umbral"]
+sev = [s for s in area["por_severidad"] if s["hectareas"] > 0]
+lider = his["mayor_anomalia"]
+principal = cob[0] if cob else {"clase": "—", "hectareas": 0, "pct": 0}
+serie = {int(k): v for k, v in his["serie_anual"].items()}
 
-n = lambda v, d=0: f"{v:,.{d}f}".replace(",", " ")
+n = lambda v, d=0: f"{v:,.{d}f}".replace(",", " ")
 
 
-def barras(filas, etiqueta_clave, valor_clave, clase, sufijo=" ha"):
-    """Barras horizontales en SVG, a escala, con la etiqueta dentro del gráfico."""
+def barras(filas, eti, val, clase, sufijo=" ha", pad=168, ancho=640):
+    """Barras horizontales SVG, a escala, con la etiqueta dentro del gráfico."""
     if not filas:
-        return "<p class='vacio'>Sin datos en esta categoría.</p>"
-    alto_fila, pad_izq, ancho = 34, 150, 560
-    maximo = max(f[valor_clave] for f in filas) or 1
-    alto = alto_fila * len(filas) + 8
-    out = [f'<svg viewBox="0 0 {ancho} {alto}" role="img" class="barras">']
+        return "<p class='vacio'>Sin datos.</p>"
+    alto_fila = 32
+    maximo = max(abs(f[val]) for f in filas) or 1
+    alto = alto_fila * len(filas) + 6
+    o = [f'<svg viewBox="0 0 {ancho} {alto}" class="barras" role="img">']
     for i, f in enumerate(filas):
-        y = i * alto_fila + 4
-        w = (f[valor_clave] / maximo) * (ancho - pad_izq - 110)
-        out.append(
-            f'<text x="{pad_izq - 10}" y="{y + 17}" text-anchor="end" '
-            f'class="b-eti">{f[etiqueta_clave]}</text>'
-            f'<rect x="{pad_izq}" y="{y + 4}" width="{max(w, 2):.1f}" height="20" '
-            f'rx="3" class="{clase}"/>'
-            f'<text x="{pad_izq + max(w, 2) + 8:.1f}" y="{y + 18}" class="b-val">'
-            f'{n(f[valor_clave])}{sufijo}</text>')
-    out.append("</svg>")
-    return "".join(out)
+        y = i * alto_fila + 3
+        w = (abs(f[val]) / maximo) * (ancho - pad - 115)
+        o.append(
+            f'<text x="{pad - 10}" y="{y + 16}" text-anchor="end" class="b-eti">'
+            f'{f[eti]}</text>'
+            f'<rect x="{pad}" y="{y + 3}" width="{max(w, 2):.1f}" height="19" '
+            f'rx="2" class="{clase}"/>'
+            f'<text x="{pad + max(w, 2) + 8:.1f}" y="{y + 17}" class="b-val">'
+            f'{n(f[val], 1 if abs(f[val]) < 10 else 0)}{sufijo}</text>')
+    o.append("</svg>")
+    return "".join(o)
 
 
-cob_svg = barras(cob, "clase", "hectareas", "b-cob")
+def columnas_serie(serie, destacar, ancho=640, alto=210):
+    """Columnas año por año, con la línea del promedio histórico dibujada."""
+    anios = sorted(serie)
+    if not anios:
+        return "<p class='vacio'>Sin serie.</p>"
+    maximo = max(serie.values()) or 1
+    hist = [serie[a] for a in anios if a != destacar]
+    prom = sum(hist) / len(hist) if hist else 0
+    izq, abajo, arriba = 46, 28, 10
+    w_util = ancho - izq - 8
+    h_util = alto - abajo - arriba
+    paso = w_util / len(anios)
+    bw = min(paso * 0.68, 34)
+    o = [f'<svg viewBox="0 0 {ancho} {alto}" class="serie" role="img">']
+    # eje y: cero y máximo
+    for v in (0, maximo):
+        y = arriba + h_util - (v / maximo) * h_util
+        o.append(f'<line x1="{izq}" y1="{y:.1f}" x2="{ancho - 8}" y2="{y:.1f}" '
+                 f'class="g-eje"/>'
+                 f'<text x="{izq - 8}" y="{y + 4:.1f}" text-anchor="end" '
+                 f'class="g-num">{n(v)}</text>')
+    # promedio histórico
+    yp = arriba + h_util - (prom / maximo) * h_util
+    o.append(f'<line x1="{izq}" y1="{yp:.1f}" x2="{ancho - 8}" y2="{yp:.1f}" '
+             f'class="g-prom"/>'
+             f'<text x="{ancho - 10}" y="{yp - 6:.1f}" text-anchor="end" '
+             f'class="g-prom-eti">promedio {n(prom)}</text>')
+    for i, a in enumerate(anios):
+        x = izq + i * paso + (paso - bw) / 2
+        h = (serie[a] / maximo) * h_util
+        o.append(f'<rect x="{x:.1f}" y="{arriba + h_util - h:.1f}" '
+                 f'width="{bw:.1f}" height="{max(h, 1):.1f}" rx="2" '
+                 f'class="{"g-foco" if a == destacar else "g-hist"}"/>'
+                 f'<text x="{x + bw / 2:.1f}" y="{alto - 9}" '
+                 f'text-anchor="middle" class="g-anio'
+                 f'{" g-anio-foco" if a == destacar else ""}">'
+                 f"'{str(a)[2:]}</text>")
+    o.append("</svg>")
+    return "".join(o)
+
+
 sev_svg = barras(sev, "clase", "hectareas", "b-sev")
+cob_svg = barras(cob, "clase", "hectareas", "b-cob")
+serie_svg = columnas_serie(serie, 2026)
+anom_svg = barras(
+    [{"d": d["departamento"].title(), "v": d["diferencia"]}
+     for d in his["por_departamento"][:8]],
+    "d", "v", "b-anom", sufijo=" focos", pad=120)
 
 sens_filas = "".join(
     f'<tr class="{"destacada" if abs(s["umbral dNBR"] - area["umbral_dnbr"]) < 1e-9 else ""}">'
     f'<td>dNBR ≥ {s["umbral dNBR"]:.2f}</td>'
-    f'<td class="num">{n(s["hectáreas"])} ha</td></tr>' for s in sens)
+    f'<td class="num">{n(s["hectáreas"])} ha</td></tr>'
+    for s in area["sensibilidad_umbral"])
 
-cob_principal = cob[0] if cob else {"clase": "—", "pct": 0, "hectareas": 0}
+def pct(v, d=1):
+    """Un porcentaje, o una raya si el dato no vino."""
+    return "—" if v is None else f"{v:.{d}f} %"
+
+
+def firmado(v, d=1):
+    return "—" if v is None else f"{v:+.{d}f}"
+
+
+cand_filas = "".join(
+    f'<tr><td>{str(c["fecha"])[:10]}</td>'
+    f'<td class="num">{pct(c.get("nubes_escena_pct"))}</td>'
+    f'<td class="num">{pct(c["invalidos_aoi_pct"])}</td>'
+    f'<td class="etq">{etiqueta}</td></tr>'
+    for etiqueta, lista in (("antes", img["candidatas_antes"]),
+                            ("después", img["candidatas_despues"]))
+    for c in lista)
+
+dep_filas = "".join(
+    f'<tr><td>{d["departamento"].title()}</td>'
+    f'<td class="num">{n(d["focos_2026"])}</td>'
+    f'<td class="num">{n(d["promedio"], 1)}</td>'
+    f'<td class="num">{d["diferencia"]:+,.0f}</td>'
+    f'<td class="num">{firmado(d.get("z"))}</td>'
+    f'<td class="num">{d["puesto_en_su_serie"]} / {d["de_n_anios"]}</td></tr>'
+    for d in his["por_departamento"][:10])
+
+aviso_anios = ""
+if his["anios_faltantes"]:
+    aviso_anios = (
+        f'<p class="aviso">Años sin cobertura comparable, excluidos y '
+        f'<strong>no rellenados</strong>: '
+        f'{", ".join(map(str, his["anios_faltantes"]))}.</p>')
 
 HTML = f"""<title>Fuego en Manantay</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;600;700&family=Public+Sans:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <style>
-/* Una columna de lectura; las cifras viven en tarjetas de borde fino, sin sombras.
-   Paleta de brasa y ceniza: neutros con sesgo cálido, acento naranja quemado. */
+/* Tablero oscuro de una columna: cifras arriba, luego temporada, territorio,
+   medicion y metodo. Paleta de brasa sobre ceniza oscura; el acento naranja
+   marca SIEMPRE 2026 y lo quemado, nunca decora. */
 :root {{
-  --ceniza-0:#faf7f4; --ceniza-1:#f1ebe5; --ceniza-2:#ddd3ca;
-  --tinta:#241c17; --tinta-suave:#6b5d53;
-  --brasa:#c1440e; --humo-barra:#7d6a5c; --linea:#e0d7ce;
+  --fondo:#120e0c; --panel:#1b1512; --panel-2:#241c17; --linea:#33281f;
+  --tinta:#f4ece5; --tinta-2:#a99687; --tinta-3:#766457;
+  --brasa:#ff7a45; --brasa-2:#c1440e; --humo:#8a7565; --frio:#5b9dc9;
   --display:"Zilla Slab",Georgia,serif;
   --texto:"Public Sans",system-ui,-apple-system,sans-serif;
-  color-scheme:light;
-}}
-@media (prefers-color-scheme:dark) {{
-  :root:not([data-theme="light"]) {{
-    --ceniza-0:#17120f; --ceniza-1:#211a16; --ceniza-2:#352b24;
-    --tinta:#f3ece6; --tinta-suave:#b3a296;
-    --brasa:#ff7a45; --humo-barra:#9b8574; --linea:#352b24;
-    color-scheme:dark;
-  }}
-}}
-:root[data-theme="dark"] {{
-  --ceniza-0:#17120f; --ceniza-1:#211a16; --ceniza-2:#352b24;
-  --tinta:#f3ece6; --tinta-suave:#b3a296;
-  --brasa:#ff7a45; --humo-barra:#9b8574; --linea:#352b24;
   color-scheme:dark;
 }}
-body {{ background:var(--ceniza-0); color:var(--tinta); font-family:var(--texto);
+body {{ background:var(--fondo); color:var(--tinta); font-family:var(--texto);
        line-height:1.6; }}
-.hoja {{ max-width:860px; margin:0 auto;
+.hoja {{ max-width:900px; margin:0 auto;
   padding-left:max(16px,env(safe-area-inset-left,0px));
   padding-right:max(16px,env(safe-area-inset-right,0px));
   padding-block:40px 64px; }}
-.eyebrow {{ font-size:.72rem; letter-spacing:.14em; text-transform:uppercase;
-  color:var(--brasa); font-weight:700; }}
-h1 {{ font-family:var(--display); font-size:clamp(2rem,6vw,3.1rem); line-height:1.08;
-  margin:.3em 0 .15em; text-wrap:balance; font-weight:700; }}
-h2 {{ font-family:var(--display); font-size:1.42rem; margin:2.6rem 0 .6rem;
-  text-wrap:balance; }}
-h3 {{ font-size:.86rem; letter-spacing:.08em; text-transform:uppercase;
-  color:var(--tinta-suave); margin:1.8rem 0 .5rem; font-weight:700; }}
-p {{ max-width:64ch; }}
-.sub {{ color:var(--tinta-suave); max-width:60ch; }}
-.corte {{ font-size:.8rem; color:var(--tinta-suave);
-  border-top:1px solid var(--linea); padding-top:.8rem; margin-top:1.6rem; }}
 
-.cifras {{ display:grid; gap:12px; margin:1.8rem 0 .5rem;
-  grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }}
-.tarjeta {{ border:1px solid var(--linea); border-radius:4px; padding:16px 16px 14px;
-  background:var(--ceniza-1); min-width:0; }}
-.tarjeta .dato {{ font-family:var(--display); font-size:2.05rem; font-weight:700;
+.eyebrow {{ font-size:.72rem; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--brasa); font-weight:700; }}
+h1 {{ font-family:var(--display); font-size:clamp(1.9rem,5.5vw,2.9rem);
+  line-height:1.1; margin:.3em 0 .2em; text-wrap:balance; font-weight:700; }}
+h2 {{ font-family:var(--display); font-size:1.35rem; margin:3rem 0 .2rem;
+  text-wrap:balance; font-weight:600; }}
+h2 .orden {{ color:var(--tinta-3); font-size:.85em; margin-right:.45em;
+  font-variant-numeric:tabular-nums; }}
+.lede {{ color:var(--tinta-2); max-width:62ch; margin-top:.2rem; }}
+p {{ max-width:64ch; }}
+strong {{ color:var(--tinta); }}
+
+.cifras {{ display:grid; gap:10px; margin:1.8rem 0 .4rem;
+  grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); }}
+.tarjeta {{ border:1px solid var(--linea); border-radius:4px; padding:15px;
+  background:var(--panel); min-width:0; }}
+.tarjeta .dato {{ font-family:var(--display); font-size:1.95rem; font-weight:700;
   line-height:1.05; font-variant-numeric:tabular-nums; }}
 .tarjeta .dato.acento {{ color:var(--brasa); }}
-.tarjeta .pie {{ font-size:.78rem; color:var(--tinta-suave); margin-top:.3rem; }}
-.tarjeta .unidad {{ font-size:.95rem; font-weight:500; }}
+.tarjeta .unidad {{ font-size:.92rem; font-weight:500; color:var(--tinta-2); }}
+.tarjeta .pie {{ font-size:.77rem; color:var(--tinta-2); margin-top:.35rem; }}
+.corte {{ font-size:.79rem; color:var(--tinta-3); border-top:1px solid var(--linea);
+  padding-top:.8rem; margin-top:1.5rem; max-width:70ch; }}
 
-.barras {{ width:100%; height:auto; margin:.6rem 0 .2rem; }}
-.b-cob {{ fill:var(--brasa); }}
-.b-sev {{ fill:var(--humo-barra); }}
+.barras,.serie {{ width:100%; height:auto; margin:.7rem 0 .2rem; }}
 .b-eti {{ font:500 12.5px var(--texto); fill:var(--tinta); }}
-.b-val {{ font:700 12.5px var(--texto); fill:var(--tinta-suave);
+.b-val {{ font:700 12.5px var(--texto); fill:var(--tinta-2);
   font-variant-numeric:tabular-nums; }}
+.b-cob {{ fill:var(--brasa-2); }} .b-sev {{ fill:var(--humo); }}
+.b-anom {{ fill:var(--brasa); }}
+.g-hist {{ fill:var(--humo); }} .g-foco {{ fill:var(--brasa); }}
+.g-eje {{ stroke:var(--linea); stroke-width:1; }}
+.g-prom {{ stroke:var(--frio); stroke-width:1.2; stroke-dasharray:5 4; }}
+.g-prom-eti {{ font:600 11px var(--texto); fill:var(--frio); }}
+.g-num {{ font:500 11px var(--texto); fill:var(--tinta-3);
+  font-variant-numeric:tabular-nums; }}
+.g-anio {{ font:500 10.5px var(--texto); fill:var(--tinta-3); }}
+.g-anio-foco {{ fill:var(--brasa); font-weight:700; }}
 
-.scroll {{ overflow-x:auto; }}
-table {{ border-collapse:collapse; width:100%; font-size:.92rem; }}
-th,td {{ text-align:left; padding:.5rem .7rem; border-bottom:1px solid var(--linea); }}
-th {{ font-size:.74rem; letter-spacing:.07em; text-transform:uppercase;
-  color:var(--tinta-suave); }}
+.scroll {{ overflow-x:auto; margin:.8rem 0; }}
+table {{ border-collapse:collapse; width:100%; font-size:.9rem; }}
+th,td {{ text-align:left; padding:.45rem .7rem; border-bottom:1px solid var(--linea);
+  white-space:nowrap; }}
+th {{ font-size:.72rem; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--tinta-3); font-weight:700; }}
 td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
-tr.destacada td {{ background:var(--ceniza-2); font-weight:700; color:var(--tinta); }}
+td.etq {{ color:var(--tinta-3); font-size:.82rem; }}
+tr.destacada td {{ background:var(--panel-2); color:var(--brasa); font-weight:700; }}
 
-.cadena {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.82rem;
-  background:var(--ceniza-1); border:1px solid var(--linea); border-left:3px solid var(--brasa);
-  border-radius:3px; padding:14px 16px; white-space:pre; overflow-x:auto;
-  line-height:1.5; }}
-ol.limites {{ padding-left:1.1rem; max-width:64ch; }}
-ol.limites li {{ margin-bottom:.7rem; }}
-.vacio {{ color:var(--tinta-suave); font-style:italic; }}
-.nota {{ font-size:.85rem; color:var(--tinta-suave); max-width:62ch; }}
+.cadena {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8rem;
+  background:var(--panel); border:1px solid var(--linea);
+  border-left:3px solid var(--brasa); border-radius:3px; padding:14px 16px;
+  white-space:pre; overflow-x:auto; line-height:1.55; color:var(--tinta-2); }}
+.aviso {{ font-size:.86rem; color:var(--tinta); background:var(--panel-2);
+  border-left:3px solid var(--frio); border-radius:3px; padding:11px 14px;
+  max-width:66ch; }}
+.nota {{ font-size:.84rem; color:var(--tinta-2); max-width:64ch; }}
+ol.limites {{ padding-left:1.15rem; max-width:64ch; color:var(--tinta-2); }}
+ol.limites li {{ margin-bottom:.65rem; }}
+.vacio {{ color:var(--tinta-3); font-style:italic; }}
+.glosario {{ display:grid; gap:10px; margin:1rem 0;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }}
+.glosario div {{ border:1px solid var(--linea); border-radius:4px; padding:12px 14px;
+  background:var(--panel); min-width:0; }}
+.glosario dt {{ font-weight:700; font-size:.82rem; color:var(--brasa);
+  margin-bottom:.2rem; }}
+.glosario dd {{ margin:0; font-size:.84rem; color:var(--tinta-2); }}
 .pie-pagina {{ margin-top:3rem; padding-top:1rem; border-top:1px solid var(--linea);
-  font-size:.8rem; color:var(--tinta-suave); }}
+  font-size:.79rem; color:var(--tinta-3); max-width:70ch; }}
 </style>
 
 <div class="hoja">
-  <p class="eyebrow">Ucayali · Coronel Portillo · UBIGEO {H['ubigeo']}</p>
-  <h1>¿Cuánto se quemó en Manantay, y a quién llegó?</h1>
-  <p class="sub">Un incendio de octubre de 2026 medido con imágenes satelitales:
-  cuántas hectáreas, qué cubría el suelo que ardió, y cuántas construcciones
-  quedaron al borde del fuego.</p>
+  <p class="eyebrow">{H['departamento'].title()} · {H['provincia'].title()} · UBIGEO {H['ubigeo']}</p>
+  <h1>Fuego en Manantay</h1>
+  <p class="lede">Cuánto se quemó, qué se quemó, a cuántas construcciones llegó — y si
+  esta semana de octubre es excepcional frente a catorce años de la misma ventana.</p>
 
+  <h2><span class="orden">01</span>Resumen</h2>
   <div class="cifras">
     <div class="tarjeta">
       <div class="dato acento">{n(area['hectareas'])}<span class="unidad"> ha</span></div>
       <div class="pie">quemadas · dNBR ≥ {area['umbral_dnbr']}</div>
     </div>
     <div class="tarjeta">
+      <div class="dato acento">{his['variacion_pct']:+.0f}<span class="unidad"> %</span></div>
+      <div class="pie">focos de 2026 vs. promedio 2012–2025, misma ventana</div>
+    </div>
+    <div class="tarjeta">
       <div class="dato">{n(exp['edificaciones_1km_openbuildings'])}</div>
-      <div class="pie">edificaciones a menos de 1 km</div>
+      <div class="pie">edificaciones a menos de {exp['radio_viviendas_m']} m del fuego</div>
     </div>
     <div class="tarjeta">
       <div class="dato">{n(exp['poblacion_5km_worldpop2020'])}</div>
-      <div class="pie">personas a 5 km · WorldPop 2020</div>
+      <div class="pie">personas a {exp['radio_poblacion_m'] // 1000} km · WorldPop 2020</div>
+    </div>
+    <div class="tarjeta">
+      <div class="dato">{his['departamentos_sobre_su_promedio']}<span class="unidad"> / {his['de_n_departamentos']}</span></div>
+      <div class="pie">departamentos sobre su propio promedio</div>
     </div>
     <div class="tarjeta">
       <div class="dato">{img['pixeles_utilizables_pct']}<span class="unidad"> %</span></div>
-      <div class="pie">del recorte sin nube en ambas fechas</div>
+      <div class="pie">del área de interés sin nube en ambas fechas</div>
     </div>
   </div>
 
-  <p class="corte">Corte: {H['corte']} · Imágenes Sentinel-2 L2A del
-  {img['antes']['fecha']} ({img['antes']['nubes_recorte_pct']} % de nube sobre el
-  recorte) y del {img['despues']['fecha']}
-  ({img['despues']['nubes_recorte_pct']} %), separadas por {img['dias_entre']} días.
+  <p class="corte">Corte: {H['corte']}. Imágenes Sentinel-2 L2A del
+  {img['antes']['fecha']} y del {img['despues']['fecha']},
+  separadas por {img['dias_entre']} días, a {img['resolucion_m']} m.
   Trabajo académico; no reemplaza los reportes del COEN, INDECI, SERFOR ni SERNANP.</p>
 
-  <h2>Qué se quemó</h2>
-  <p>El fuego no cayó sobre territorio vacío: la clase dominante fue
-  <strong>{cob_principal['clase'].lower()}</strong>, con {n(cob_principal['hectareas'])} ha
-  ({cob_principal['pct']:.0f} % de la superficie quemada).</p>
-  {cob_svg}
-  <p class="nota">Hectáreas quemadas por clase de ESA WorldCover 2021, contadas sobre
-  la misma máscara de dNBR. La cobertura es de 2021 y el fuego de 2026: cinco años de
-  frente agrícola en Ucayali desfasan la clasificación.</p>
+  <h2><span class="orden">02</span>Temporada · ¿es 2026 excepcional?</h2>
+  <p>La misma ventana calendario ({his['ventana_calendario']}) en cada año, para que la
+  comparación valga: <strong>{n(his['focos_2026'])} focos en 2026</strong> frente a un
+  promedio de {n(his['promedio_2012_2025'])}. Es el puesto
+  <strong>{his['puesto_2026']} de {his['de_n_anios']}</strong> años de la serie.</p>
+  {serie_svg}
+  {aviso_anios}
+  <p class="aviso"><strong>Comparabilidad.</strong> {his['aviso_sensores']}
+  El NRT no está revalidado, así que parte de la diferencia puede venir del
+  procesamiento y no del fuego.</p>
 
-  <h2>Con qué severidad</h2>
+  <h2><span class="orden">03</span>Departamentos · quién explica la diferencia</h2>
+  <p>La mayor anomalía absoluta es <strong>{lider['departamento'].title()}</strong>:
+  {n(lider['focos_2026'])} focos contra un promedio de {n(lider['promedio'])}
+  ({lider['diferencia']:+,.0f}{"" if lider.get("z") is None else f", z = {lider['z']:+.1f}"}).</p>
+  {anom_svg}
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Departamento</th><th class="num">2026</th>
+      <th class="num">Prom. 12–25</th><th class="num">Dif.</th>
+      <th class="num">z</th><th class="num">Puesto en su serie</th></tr></thead>
+      <tbody>{dep_filas}</tbody>
+    </table>
+  </div>
+
+  <h2><span class="orden">04</span>Atención prioritaria · el incendio medido</h2>
+  <p>En Manantay, {inc['focos_en_distrito']} focos se agruparon en
+  <strong>{inc['incendios_en_distrito']} incendios</strong> con la regla de ≤ 1 km y
+  ≤ 48 h. El de mayor energía concentró {inc['n_focos']} focos y
+  {n(inc['frp_total_mw'])} MW durante {inc['horas_activo']:.0f} horas.</p>
+  <div class="cifras">
+    <div class="tarjeta">
+      <div class="dato">{n(inc['huella_viirs_ha'])}<span class="unidad"> ha</span></div>
+      <div class="pie">huella VIIRS · <strong>proxy, no área quemada</strong></div>
+    </div>
+    <div class="tarjeta">
+      <div class="dato acento">{n(area['hectareas'])}<span class="unidad"> ha</span></div>
+      <div class="pie">área quemada medida con dNBR</div>
+    </div>
+    <div class="tarjeta">
+      <div class="dato">{n(inc['frp_max_mw'], 1)}<span class="unidad"> MW</span></div>
+      <div class="pie">el foco más intenso</div>
+    </div>
+  </div>
   {sev_svg}
-  <p class="nota">Umbrales de Key &amp; Benson (USGS).</p>
+  <p class="nota">Hectáreas por clase de severidad, umbrales de Key &amp; Benson (USGS).
+  <strong>No son universales</strong>: dependen del ecosistema, del sensor, de las fechas
+  y de una validación de campo que acá no existe.</p>
 
-  <h2>El número depende del umbral</h2>
+  <h2><span class="orden">05</span>El número depende del umbral</h2>
   <p>La misma imagen, cuatro fronteras entre «quemado» y «no quemado». Reportamos
   {area['umbral_dnbr']}; las otras tres son el intervalo de lo defendible.</p>
   <div class="scroll">
@@ -193,48 +326,98 @@ ol.limites li {{ margin-bottom:.7rem; }}
       <tbody>{sens_filas}</tbody>
     </table>
   </div>
+  <p class="nota">Y estas son las imágenes candidatas. Las dos columnas de nube son
+  distintas y por eso se reportan las dos: la de la escena cubre 110 × 110 km, la del
+  área de interés es la que de verdad afecta al incendio. <strong>La elección se hizo
+  por la segunda</strong>, no por la primera.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Fecha</th><th class="num">Nube de la escena</th>
+      <th class="num">Inválidos sobre el AOI</th><th></th></tr></thead>
+      <tbody>{cand_filas}</tbody>
+    </table>
+  </div>
 
-  <h2>Cómo se midió</h2>
-  <div class="cadena">focos VIIRS S-NPP, 7 días (NASA FIRMS)
-  └─ confianza ≥ nominal          descarta reflejos y antorchas
-  └─ dentro de Manantay           {foc['en_distrito']} focos
-  └─ DBSCAN ≤ 1 km y ≤ 48 h       {foc['incendios_detectados']} incendios distintos
-       └─ el mayor: {inc['n_focos']} focos, {n(inc['frp_total_mw'], 0)} MW, {inc['horas_activo']:.0f} h activo
+  <h2><span class="orden">06</span>Qué se quemó, y a quién llegó</h2>
+  <p>El fuego no cayó sobre territorio vacío: la clase dominante fue
+  <strong>{principal['clase'].lower()}</strong>, con {n(principal['hectareas'])} ha
+  ({principal['pct']:.0f} % de lo quemado).</p>
+  {cob_svg}
+  <p class="nota">ESA WorldCover 2021 cargado sobre la misma grilla que el dNBR, con
+  remuestreo nearest-neighbor por ser categórico. Es de 2021 y el fuego de 2026: cinco
+  años de frente agrícola en Ucayali desfasan la clasificación, subestimando agricultura
+  y construcción.</p>
+  <p>Sobre la exposición: <strong>{n(exp['edificaciones_1km_openbuildings'])}
+  edificaciones</strong> ({n(exp['ha_construidas_1km'], 1)} ha construidas) quedaron a
+  menos de {exp['radio_viviendas_m']} m del fuego, de
+  {n(exp['edificaciones_aoi'])} en el área de interés. Esa cifra es el aporte de este
+  trabajo: WorldPop da personas por celda de 1 km, Google Open Buildings da un polígono
+  por techo.</p>
 
-Sentinel-2 L2A (Microsoft Planetary Computer)
-  └─ candidatas listadas con fecha y nubosidad ANTES de calcular
-  └─ elegida por nube sobre el recorte (SCL), no sobre la escena
-  └─ NBR = (B08 − B12) / (B08 + B12)
-  └─ dNBR = NBR_antes − NBR_después
-       └─ umbral {area['umbral_dnbr']}             {n(area['hectareas'])} ha
+  <h2><span class="orden">07</span>Fuentes y método</h2>
+  <div class="cadena">focos VIIRS S-NPP, 7 dias (NASA FIRMS)
+  |- confianza >= nominal            descarta reflejos y fuentes fijas
+  |- sjoin con distritos INEI         {n(nac['focos_7d'])} focos, {n(nac['distritos_con_fuego'])} distritos con fuego
+  |- DBSCAN <= 1 km y <= 48 h         {inc['focos_en_distrito']} focos -> {inc['incendios_en_distrito']} incendios en Manantay
+       |- prioridad = log(1+FRP) x log(1+huella) x (1 + focos 24 h)
 
-cruces sobre la misma máscara
-  └─ ESA WorldCover 10 m          qué se quemó
-  └─ WorldPop 1 km, anillo 5 km   {n(exp['poblacion_5km_worldpop2020'])} personas
-  └─ Open Buildings, anillo 1 km  {n(exp['edificaciones_1km_openbuildings'])} edificaciones</div>
-  <p class="nota">Todas las fuentes son públicas y ninguna pide clave ni pago.
-  El análisis corre en CPU.</p>
+serie historica, MISMA ventana calendario cada anio
+  |- 2012-2025 archivo SP · 2026 NRT  marcado foco por foco
+  |- anios sin cobertura: se excluyen y se avisa, NO se rellenan
+  |- por departamento: promedio, mediana, maximo, sigma, z, puesto
+
+Sentinel-2 L2A, grilla comun UTM 18S a {img['resolucion_m']} m
+  |- candidatas con fecha, nube de escena y % invalido sobre el AOI
+  |- se elige por el % sobre el AOI (SCL), NO por eo:cloud_cover
+  |- inspeccion previa: CRS, tamano, bandas, nodata, dtype, validos
+  |- assert misma_grilla() antes de restar
+  |- NBR = (B08 - B12)/(B08 + B12);  dNBR = NBR_antes - NBR_despues
+       |- umbral {area['umbral_dnbr']}                   {n(area['hectareas'])} ha
+
+cruces sobre la misma mascara de quemado
+  |- ESA WorldCover con like= la escena, nearest-neighbor
+  |- WorldPop 1 km, anillo {exp['radio_poblacion_m'] // 1000} km            {n(exp['poblacion_5km_worldpop2020'])} personas
+  |- Open Buildings, anillo {exp['radio_viviendas_m']} m      {n(exp['edificaciones_1km_openbuildings'])} edificaciones</div>
+
+  <p class="nota">Todas las fuentes son públicas. La única que pide clave es FIRMS, y se
+  lee de <code>.env</code>, nunca del código. Todo corre en CPU.</p>
+
+  <h2>Cuatro cosas que no son lo mismo</h2>
+  <div class="glosario">
+    <div><dt>Foco de calor</dt><dd>Un píxel donde el satélite midió una anomalía
+    térmica. Puede ser un fuego forestal, una quema agrícola o un horno.</dd></div>
+    <div><dt>Incendio</dt><dd>Un grupo de focos a ≤ 1 km y ≤ 48 h. Es una regla nuestra,
+    no una categoría del dato.</dd></div>
+    <div><dt>Huella VIIRS</dt><dd>El buffer de 375 m alrededor de los focos. Proxy
+    operativo: sobreestima los fuegos puntuales y subestima los grandes.</dd></div>
+    <div><dt>Área quemada</dt><dd>Lo medido con dNBR sobre Sentinel-2. Es la única de las
+    cuatro que se mide en hectáreas de suelo afectado.</dd></div>
+  </div>
 
   <h2>Lo que estos números no dicen</h2>
   <ol class="limites">
-    <li><strong>Un foco de calor no es un incendio.</strong> VIIRS detecta anomalías
-    térmicas: quemas agrícolas controladas, hornos ladrilleros y fuegos forestales
-    entran al mismo conteo.</li>
+    <li><strong>Un foco de calor no es un incendio.</strong> Quemas agrícolas
+    controladas, hornos ladrilleros y fuegos forestales entran al mismo conteo.</li>
+    <li><strong>La huella VIIRS no es área quemada.</strong> Por eso se reportan
+    separadas: {n(inc['huella_viirs_ha'])} ha de huella frente a
+    {n(area['hectareas'])} ha medidas con dNBR.</li>
     <li><strong>Las nubes esconden el fuego.</strong> Quedó utilizable el
-    {img['pixeles_utilizables_pct']} % de los píxeles; lo tapado no entra al área
-    quemada. Las {n(area['hectareas'])} ha son un piso, no una estimación insesgada.</li>
-    <li><strong>El umbral es una decisión, no un dato.</strong> Ver la tabla de arriba.</li>
-    <li><strong>WorldCover es de 2021</strong> y subestima agricultura y construcción
-    en un frente agrícola activo.</li>
+    {img['pixeles_utilizables_pct']} % del área de interés; lo tapado no entra. Las
+    {n(area['hectareas'])} ha son un <strong>piso</strong>, no una estimación
+    insesgada. En la Amazonía en octubre, este es el sesgo dominante.</li>
+    <li><strong>El umbral es una decisión, no un dato.</strong> Ver la sección 05.</li>
+    <li><strong>La serie histórica mezcla procesamientos</strong> (SP y NRT). Mismo
+    satélite, distinta validación.</li>
     <li><strong>Una edificación no es una vivienda.</strong> Open Buildings detecta
-    techos —galpones, colegios, corrales cuentan igual— y su cobertura cae en bosque
-    denso. El conteo de expuestas es, otra vez, un piso.</li>
+    techos, y su cobertura cae en bosque denso. El conteo de expuestas es, otra vez,
+    un piso.</li>
   </ol>
 
-  <p class="pie-pagina">Alexander Noblejas · Ciencia de Datos con Python,
-  Diplomatura QLAB · 21 de octubre de 2026.<br>
-  Datos: NASA FIRMS · Sentinel-2 L2A y ESA WorldCover vía Microsoft Planetary
-  Computer · WorldPop 2020 · Google Open Buildings v3 · límites INEI (UBIGEO).</p>
+  <p class="pie-pagina">Alexander Noblejas · Ciencia de Datos con Python, Diplomatura
+  QLAB · 21 de octubre de 2026.<br>
+  Datos: NASA FIRMS (VIIRS S-NPP) · Sentinel-2 L2A y ESA WorldCover vía Microsoft
+  Planetary Computer · WorldPop 2020 · Google Open Buildings v3 · límites INEI (UBIGEO).
+  </p>
 </div>
 """
 
