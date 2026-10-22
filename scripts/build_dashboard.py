@@ -343,11 +343,17 @@ if escena:
 
   <div class="cifras">
     <div class="tarjeta"><div class="dato">{n(met['altitud_min'])}–{n(met['altitud_max'])}<span class="unidad"> m</span></div>
-      <div class="pie">altitud de los focos · mediana {n(met['altitud_mediana'])} m</div></div>
+      <div class="pie">altitud de los focos · mediana {n(met['altitud_mediana'])} m</div>
+      <div class="expl">Los 86 focos caben en {met['altitud_max'] - met['altitud_min']:.0f} m
+      de desnivel: todos en la misma llanura.</div></div>
     <div class="tarjeta"><div class="dato">{met['pendiente_mediana']}<span class="unidad">°</span></div>
-      <div class="pie">pendiente mediana · prácticamente llano</div></div>
+      <div class="pie">pendiente mediana · prácticamente llano</div>
+      <div class="expl">Una rampa de acceso para sillas de ruedas tiene unos 5°. Acá el
+      fuego no gana velocidad por la cuesta.</div></div>
     <div class="tarjeta"><div class="dato">{principal['clase']}</div>
-      <div class="pie">cobertura dominante de lo quemado</div></div>
+      <div class="pie">cobertura dominante de lo quemado</div>
+      <div class="expl">{principal['pct']:.0f} % de las hectáreas quemadas. Indica fuego
+      de frontera agrícola más que de bosque primario.</div></div>
   </div>
 
   <h3 class="sub-h">Los {inc['incendios_en_distrito']} incendios de Manantay, día por día</h3>
@@ -388,10 +394,10 @@ if escena:
     raiz.appendChild(ren.domElement);
 
     var esc = new THREE.Scene();
-    esc.background = new THREE.Color(0x120e0c);
+    esc.background = new THREE.Color(0x241c17);
     var cam = new THREE.PerspectiveCamera(40, ancho / alto, 1, 80000);
-    esc.add(new THREE.AmbientLight(0xffffff, 0.78));
-    var sol = new THREE.DirectionalLight(0xfff2e6, 1.05);
+    esc.add(new THREE.AmbientLight(0xffffff, 1.0));
+    var sol = new THREE.DirectionalLight(0xfff2e6, 0.85);
     sol.position.set(-1, 1.3, 0.7); esc.add(sol);
     var relleno = new THREE.DirectionalLight(0x9ec4e0, 0.28);
     relleno.position.set(1, 0.5, -0.8); esc.add(relleno);
@@ -416,11 +422,16 @@ if escena:
       }});
     }}
 
-    var mat = new THREE.MeshLambertMaterial({{ color: 0xffffff }});
-    var malla = new THREE.Mesh(geo, mat);
+    // Una imagen de satelite ya trae su propia iluminacion: pasarla por un
+    // material Lambert la oscurece. Por eso las texturas van sin iluminar y
+    // solo el modo "Relieve" usa luz, que es donde el sombreado informa.
+    var matPlano = new THREE.MeshBasicMaterial({{ color: 0xffffff }});
+    var matLuz = new THREE.MeshLambertMaterial({{ color: 0xc3ab93 }});
+    var malla = new THREE.Mesh(geo, matPlano);
     malla.rotation.x = -Math.PI / 2;
     esc.add(malla);
-    textura("natural", function (t) {{ mat.map = t; mat.needsUpdate = true; pinta(); }});
+    textura("natural", function (t) {{
+      matPlano.map = t; matPlano.needsUpdate = true; pinta(); }});
 
     // cada foco: una esfera a su altitud y el anillo del pixel VIIRS en el suelo
     var gFocos = new THREE.Group(), gAnillos = new THREE.Group();
@@ -486,9 +497,13 @@ if escena:
         b.classList.add("activo");
         var capa = b.dataset.capa;
         textura(capa, function (t) {{
-          mat.map = t;
-          mat.color = new THREE.Color(capa === "relieve" ? 0xa08a76 : 0xffffff);
-          mat.needsUpdate = true; pinta();
+          if (capa === "relieve") {{
+            malla.material = matLuz;
+          }} else {{
+            matPlano.map = t; matPlano.needsUpdate = true;
+            malla.material = matPlano;
+          }}
+          pinta();
         }});
       }});
     }});
@@ -560,6 +575,8 @@ else:
       <div class="dato">{n(exp["edificaciones_1km_openbuildings"])}</div>
       <div class="pie">edificaciones a menos de {exp["radio_viviendas_m"]} m
       del fuego</div>
+      <div class="expl">Techos detectados por IA sobre imagen satelital. Son pocas
+      porque el incendio fue en la zona rural del distrito, no en la urbana.</div>
     </div>"""
     parrafo_exposicion = f"""<p>Sobre la exposición:
   <strong>{n(exp["edificaciones_1km_openbuildings"])} edificaciones</strong>
@@ -662,7 +679,7 @@ p {{ max-width:64ch; }}
 strong {{ color:var(--tinta); }}
 
 .cifras {{ display:grid; gap:10px; margin:1.8rem 0 .4rem;
-  grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); }}
+  grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); }}
 .tarjeta {{ border:1px solid var(--linea); border-radius:4px; padding:15px;
   background:var(--panel); min-width:0; }}
 .tarjeta .dato {{ font-family:var(--display); font-size:1.95rem; font-weight:700;
@@ -670,6 +687,8 @@ strong {{ color:var(--tinta); }}
 .tarjeta .dato.acento {{ color:var(--brasa); }}
 .tarjeta .unidad {{ font-size:.92rem; font-weight:500; color:var(--tinta-2); }}
 .tarjeta .pie {{ font-size:.77rem; color:var(--tinta-2); margin-top:.35rem; }}
+.tarjeta .expl {{ font-size:.75rem; color:var(--tinta-3); margin-top:.45rem;
+  padding-top:.45rem; border-top:1px solid var(--linea); line-height:1.45; }}
 .corte {{ font-size:.79rem; color:var(--tinta-3); border-top:1px solid var(--linea);
   padding-top:.8rem; margin-top:1.5rem; max-width:70ch; }}
 
@@ -713,7 +732,7 @@ body::before {{ content:""; position:fixed; inset:0 0 auto;
 .l-n7d {{ background:#ffd9a0; }}
 
 .lienzo {{ width:100%; border:1px solid var(--linea); border-radius:4px;
-  overflow:hidden; background:var(--panel); margin:.6rem 0 .3rem;
+  overflow:hidden; background:var(--panel-2); margin:.6rem 0 .3rem;
   cursor:grab; touch-action:none; }}
 .lienzo:active {{ cursor:grabbing; }}
 .lienzo canvas {{ display:block; width:100%; height:auto; }}
@@ -842,23 +861,34 @@ ol.limites li {{ margin-bottom:.65rem; }}
     <div class="tarjeta">
       <div class="dato acento">{n(area['hectareas'])}<span class="unidad"> ha</span></div>
       <div class="pie">quemadas · dNBR ≥ {area['umbral_dnbr']}</div>
+      <div class="expl">Superficie medida con imágenes de satélite antes y después.
+      Equivale a unas {area['hectareas']/70:.0f} canchas de fútbol.</div>
     </div>
     <div class="tarjeta">
       <div class="dato acento">{his['variacion_pct']:+.0f}<span class="unidad"> %</span></div>
       <div class="pie">focos de 2026 vs. promedio 2012–2025, misma ventana</div>
+      <div class="expl">Comparando los mismos días de octubre en cada año. Por encima
+      de lo normal, pero no es el récord: 2026 va en el puesto {his['puesto_2026']}
+      de {his['de_n_anios']}.</div>
     </div>
     {tarjeta_edificios}
     <div class="tarjeta">
       <div class="dato">{n(exp['poblacion_5km_worldpop2020'])}</div>
       <div class="pie">personas a {exp['radio_poblacion_m'] // 1000} km · WorldPop 2020</div>
+      <div class="expl">Población que vive cerca, no personas afectadas: nadie
+      necesariamente perdió su casa. Mide proximidad al humo y al riesgo.</div>
     </div>
     <div class="tarjeta">
       <div class="dato">{his['departamentos_sobre_su_promedio']}<span class="unidad"> / {his['de_n_departamentos']}</span></div>
       <div class="pie">departamentos sobre su propio promedio</div>
+      <div class="expl">Cada uno comparado consigo mismo, no entre ellos: Ucayali
+      siempre arde más que Tacna, lo que importa es si arde más que de costumbre.</div>
     </div>
     <div class="tarjeta">
       <div class="dato">{img['pixeles_utilizables_pct']}<span class="unidad"> %</span></div>
       <div class="pie">del área de interés sin nube en ambas fechas</div>
+      <div class="expl">El {100 - img['pixeles_utilizables_pct']:.0f} % restante quedó
+      tapado y no se pudo medir. Por eso las hectáreas son un mínimo, no un total.</div>
     </div>
   </div>
 
@@ -958,14 +988,20 @@ ol.limites li {{ margin-bottom:.65rem; }}
     <div class="tarjeta">
       <div class="dato">{n(inc['huella_viirs_ha'])}<span class="unidad"> ha</span></div>
       <div class="pie">huella VIIRS · <strong>proxy, no área quemada</strong></div>
+      <div class="expl">Lo que ocuparían los píxeles donde el satélite detectó calor.
+      Sirve para comparar incendios entre sí, no para reportar daño.</div>
     </div>
     <div class="tarjeta">
       <div class="dato acento">{n(area['hectareas'])}<span class="unidad"> ha</span></div>
       <div class="pie">área quemada medida con dNBR</div>
+      <div class="expl">La cifra defendible: sale de comparar la reflectancia del suelo
+      antes y después. {((inc['huella_viirs_ha'] / area['hectareas']) - 1) * 100:.0f} % menor que la huella.</div>
     </div>
     <div class="tarjeta">
       <div class="dato">{n(inc['frp_max_mw'], 1)}<span class="unidad"> MW</span></div>
       <div class="pie">el foco más intenso</div>
+      <div class="expl">Potencia radiativa: la energía que emitía ese punto al pasar
+      el satélite. Un fuego de pastos ronda unos pocos MW.</div>
     </div>
   </div>
   {sev_svg}
