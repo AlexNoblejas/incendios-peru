@@ -206,6 +206,15 @@ def mapa_pais(m, ancho=640, alto=720, margen=12):
 ESC = RAIZ / "outputs" / "escena3d.json"
 escena = json.loads(ESC.read_text(encoding="utf-8")) if ESC.exists() else None
 
+# El visor espera las texturas como PNG en base64. Un escena3d.json generado
+# por la version anterior las trae como listas de enteros: en ese caso se
+# ignora, en vez de publicar una vista 3D rota.
+if escena and not isinstance(
+        escena.get("texturas", {}).get("natural"), str):
+    print("  aviso: escena3d.json es de la versión anterior; vuelve a correr "
+          "scripts/exportar_3d.py para la vista 3D en alta resolución")
+    escena = None
+
 
 def columnas_dia(filas, campo, titulo_y, clase, ancho=300, alto=170):
     """Barras por día: huella acumulada, huella nueva o potencia radiativa."""
@@ -277,6 +286,15 @@ if escena:
     # terreno en el navegador. Sin servidores: el HTML es autocontenido.
     # Manantay es llano: con una exageracion fija el relieve no se veria.
     # Se calcula para que el desnivel ocupe ~8% del ancho del terreno.
+    _dias3d = escena.get("dias") or sorted({f.get("dia", "") for f in escena["focos"]})
+    _pal = ["#ffd9a0", "#ff9d4d", "#e02200", "#8c0a00"]
+    colores_dia = json.dumps({d: _pal[min(i, 3)] for i, d in enumerate(_dias3d)})
+    leyenda_3d = "".join(
+        f'<span><i style="background:{_pal[min(i, 3)]}"></i>{d}</span>'
+        for i, d in enumerate(_dias3d)) + (
+        '<span class="l-nota">anillo = píxel VIIRS de '
+        f'{escena.get("pixel_viirs_m", 375)} m</span>')
+
     _M = escena["malla"]
     _desnivel = max(_M["zmax"] - _M["zmin"], 0.1)
     EXAG = round(min(max(0.08 * _M["metros_x"] / _desnivel, 1), 60), 1)
@@ -289,8 +307,10 @@ if escena:
 
     bloque_3d = f"""
   <p>El terreno real del área analizada, con la imagen de Sentinel-2 del
-  {met['fecha_imagen']} encima. Arrastra para girar, rueda para acercar. Los puntos
-  rojos son los focos VIIRS, colocados a su altitud.</p>
+  {met['fecha_imagen']} encima. <strong>Arrastra para girar, rueda para acercar.</strong>
+  Cada foco VIIRS está colocado a su altitud, y el anillo que lo rodea es el píxel
+  de {escena.get('pixel_viirs_m', 375)} m que el sensor realmente mide: esa es toda la
+  precisión que tiene una detección térmica.</p>
 
   <div class="modos" role="group" aria-label="Textura del terreno">
     <button type="button" class="modo activo" data-capa="natural">Satélite</button>
@@ -298,37 +318,56 @@ if escena:
     <button type="button" class="modo" data-capa="relieve">Relieve</button>
     <button type="button" class="modo" data-capa="severidad">dNBR</button>
     <label class="interruptor"><input type="checkbox" id="ver-focos" checked>
-      focos VIIRS</label>
+      focos</label>
+    <label class="interruptor"><input type="checkbox" id="ver-anillos" checked>
+      píxel VIIRS</label>
   </div>
   <div id="lienzo3d" class="lienzo"></div>
-  <p class="nota" id="pista3d"><strong>Exageración vertical ×{EXAG:.0f}</strong>, y no
-  es un capricho: entre el punto más bajo y el más alto del área hay solo
-  {_desnivel:.0f} m. Sin exagerar, la superficie sería una lámina plana. Ese es el
-  hallazgo de esta sección: en Manantay <strong>el relieve no explica nada</strong>
-  —el fuego no sube por una ladera, se extiende por una llanura—, al revés de lo que
-  pasa en los incendios de sierra. En «dNBR», el gris es lo que quedó sin dato por
-  nubes y los tonos cálidos son la severidad creciente.</p>
+  <div class="leyenda" id="leyenda3d">{leyenda_3d}</div>
+  <p class="nota" id="pista3d">Qué estás viendo en cada modo:
+  <strong>Satélite</strong> es color natural (B04/B03/B02), como lo vería el ojo.
+  <strong>Infrarrojo</strong> usa B08/B04/B03: la vegetación sana sale roja y lo
+  quemado, oscuro — separa mejor el daño que el color natural.
+  <strong>Relieve</strong> quita la imagen y deja solo la forma del terreno.
+  <strong>dNBR</strong> pinta la severidad: de crema a rojo oscuro según cuánto cayó
+  el índice, y en gris lo que quedó sin dato por nubes.</p>
+
+  <p class="aviso"><strong>Exageración vertical ×{EXAG:.0f}</strong>, y no es un
+  capricho: entre el punto más bajo y el más alto del área hay solo {_desnivel:.0f} m
+  en {_M['metros_x']/1000:.1f} km. Sin exagerar, la superficie sería una lámina plana.
+  Ese es el hallazgo de esta sección: en Manantay <strong>el relieve no explica la
+  propagación</strong> —el fuego no trepa por una ladera, se extiende por una llanura
+  aluvial—, al revés de lo que ocurre en los incendios de sierra, donde la pendiente
+  es el factor dominante. Si quisieras explicar por qué ardió <em>aquí</em>, el terreno
+  no te sirve: habría que mirar uso del suelo y actividad humana.</p>
 
   <div class="cifras">
     <div class="tarjeta"><div class="dato">{n(met['altitud_min'])}–{n(met['altitud_max'])}<span class="unidad"> m</span></div>
-      <div class="pie">altitud de los focos (mediana {n(met['altitud_mediana'])} m)</div></div>
+      <div class="pie">altitud de los focos · mediana {n(met['altitud_mediana'])} m</div></div>
     <div class="tarjeta"><div class="dato">{met['pendiente_mediana']}<span class="unidad">°</span></div>
-      <div class="pie">pendiente mediana del área</div></div>
+      <div class="pie">pendiente mediana · prácticamente llano</div></div>
     <div class="tarjeta"><div class="dato">{principal['clase']}</div>
       <div class="pie">cobertura dominante de lo quemado</div></div>
   </div>
 
   <h3 class="sub-h">Los {inc['incendios_en_distrito']} incendios de Manantay, día por día</h3>
-  <p class="nota">Estas tres series cubren los {inc['focos_en_distrito']} focos del
-  distrito, no solo el incendio principal: por eso la huella acumulada supera las
-  {n(inc['huella_viirs_ha'])} ha de ese incendio.</p>
+  <p>Las tres series cuentan la misma historia desde tres ángulos y cubren los
+  {inc['focos_en_distrito']} focos del distrito, no solo el incendio principal: por eso
+  la huella acumulada supera las {n(inc['huella_viirs_ha'])} ha de ese incendio.
+  <strong>Lo que muestran es una escalada de dos días</strong>: el 14 de octubre hay un
+  foco aislado, el 15 aparecen 27 y el 16 saltan a 58, con la potencia radiativa
+  multiplicándose. No fue un incendio que ardió lento durante la semana; fue un frente
+  que se abrió de golpe.</p>
   <div class="tres">
     <div><h4>Huella acumulada</h4>{graf_acum}<p class="nota">hectáreas de huella VIIRS
-      del distrito; <strong>no</strong> es área quemada.</p></div>
-    <div><h4>Potencia radiativa</h4>{graf_frp}<p class="nota">megavatios sumados
-      por día.</p></div>
-    <div><h4>Altitud de los focos</h4>{graf_alt}<p class="nota">franjas de 10 m: los
-      86 focos caben en {met["altitud_max"] - met["altitud_min"]:.0f} m de desnivel.</p></div>
+      del distrito; <strong>no</strong> es área quemada. Crece porque se suman focos
+      nuevos, no porque el fuego se mida mejor.</p></div>
+    <div><h4>Potencia radiativa</h4>{graf_frp}<p class="nota">megavatios sumados por
+      día. Es la energía que el satélite midió: distingue un fuego intenso de muchos
+      focos débiles.</p></div>
+    <div><h4>Altitud de los focos</h4>{graf_alt}<p class="nota">franjas de 10 m. Los
+      86 focos caben en {met["altitud_max"] - met["altitud_min"]:.0f} m de desnivel:
+      confirma que el terreno no estructura nada acá.</p></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
@@ -339,58 +378,73 @@ if escena:
     if (!raiz || typeof THREE === "undefined") {{ return; }}
     var D = JSON.parse(document.getElementById("escena-3d").textContent);
     var M = D.malla, AN = M.ancho, AL = M.alto, EXAG = {EXAG};
+    var COLOR = {colores_dia};
 
     var ancho = raiz.clientWidth, alto = Math.round(ancho * 0.62);
     var ren = new THREE.WebGLRenderer({{ antialias: true }});
     ren.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     ren.setSize(ancho, alto);
+    ren.outputColorSpace = THREE.SRGBColorSpace;
     raiz.appendChild(ren.domElement);
 
     var esc = new THREE.Scene();
     esc.background = new THREE.Color(0x120e0c);
-    var cam = new THREE.PerspectiveCamera(42, ancho / alto, 1, 60000);
-    esc.add(new THREE.AmbientLight(0xffffff, 0.85));
-    var sol = new THREE.DirectionalLight(0xffffff, 0.9);
-    sol.position.set(-1, 1.4, 1); esc.add(sol);
+    var cam = new THREE.PerspectiveCamera(40, ancho / alto, 1, 80000);
+    esc.add(new THREE.AmbientLight(0xffffff, 0.78));
+    var sol = new THREE.DirectionalLight(0xfff2e6, 1.05);
+    sol.position.set(-1, 1.3, 0.7); esc.add(sol);
+    var relleno = new THREE.DirectionalLight(0x9ec4e0, 0.28);
+    relleno.position.set(1, 0.5, -0.8); esc.add(relleno);
 
     var geo = new THREE.PlaneGeometry(M.metros_x, M.metros_y, AN - 1, AL - 1);
     var pos = geo.attributes.position;
     for (var i = 0; i < pos.count; i++) {{ pos.setZ(i, M.z[i] * EXAG); }}
     geo.computeVertexNormals();
 
-    function textura(nombre) {{
-      if (nombre === "relieve") {{ return null; }}
-      var src = D.texturas[nombre];
-      var buf = new Uint8Array(AN * AL * 4);
-      for (var k = 0, j = 0; k < AN * AL; k++) {{
-        buf[j++] = src[k * 3]; buf[j++] = src[k * 3 + 1];
-        buf[j++] = src[k * 3 + 2]; buf[j++] = 255;
-      }}
-      var t = new THREE.DataTexture(buf, AN, AL, THREE.RGBAFormat);
-      t.needsUpdate = true; t.flipY = false;
-      return t;
+    var cargador = new THREE.TextureLoader();
+    var cache = {{}};
+    function textura(nombre, listo) {{
+      if (nombre === "relieve") {{ listo(null); return; }}
+      if (cache[nombre]) {{ listo(cache[nombre]); return; }}
+      cargador.load(D.texturas[nombre], function (t) {{
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.flipY = false;
+        t.anisotropy = ren.capabilities.getMaxAnisotropy();
+        t.minFilter = THREE.LinearMipmapLinearFilter;
+        t.magFilter = THREE.LinearFilter;
+        cache[nombre] = t; listo(t);
+      }});
     }}
 
-    var mat = new THREE.MeshLambertMaterial({{ map: textura("natural") }});
+    var mat = new THREE.MeshLambertMaterial({{ color: 0xffffff }});
     var malla = new THREE.Mesh(geo, mat);
     malla.rotation.x = -Math.PI / 2;
     esc.add(malla);
+    textura("natural", function (t) {{ mat.map = t; mat.needsUpdate = true; pinta(); }});
 
-    var grupo = new THREE.Group();
-    var geoF = new THREE.SphereGeometry(Math.max(M.metros_x / 190, 18), 8, 6);
-    var matF = new THREE.MeshBasicMaterial({{ color: 0xff2d00 }});
+    // cada foco: una esfera a su altitud y el anillo del pixel VIIRS en el suelo
+    var gFocos = new THREE.Group(), gAnillos = new THREE.Group();
+    var radioPx = (D.pixel_viirs_m || 375) / 2;
+    var geoF = new THREE.SphereGeometry(Math.max(M.metros_x / 240, 14), 10, 8);
+    var geoA = new THREE.RingGeometry(radioPx * 0.88, radioPx, 28);
     D.focos.forEach(function (f) {{
-      var m = new THREE.Mesh(geoF, matF);
-      m.position.set((f.u - 0.5) * M.metros_x,
-                     f.z * EXAG + M.metros_x / 160,
-                     (f.v - 0.5) * M.metros_y);
-      grupo.add(m);
+      var col = new THREE.Color(COLOR[f.dia] || "#ff7a45");
+      var x = (f.u - 0.5) * M.metros_x, y = (f.v - 0.5) * M.metros_y;
+      var e = new THREE.Mesh(geoF, new THREE.MeshBasicMaterial({{ color: col }}));
+      e.position.set(x, f.z * EXAG + M.metros_x / 150, y);
+      gFocos.add(e);
+      var a = new THREE.Mesh(geoA, new THREE.MeshBasicMaterial({{
+        color: col, transparent: true, opacity: 0.55,
+        side: THREE.DoubleSide, depthWrite: false }}));
+      a.rotation.x = -Math.PI / 2;
+      a.position.set(x, f.z * EXAG + 6, y);
+      gAnillos.add(a);
     }});
-    esc.add(grupo);
+    esc.add(gFocos); esc.add(gAnillos);
 
     var centro = new THREE.Vector3(0, (M.zmin + M.zmax) / 2 * EXAG, 0);
     var radio = Math.max(M.metros_x, M.metros_y);
-    var giro = 0.75, incl = 0.95, dist = radio * 1.25;
+    var giro = 0.78, incl = 0.82, dist = radio * 1.18;
     function situar() {{
       cam.position.set(centro.x + dist * Math.cos(incl) * Math.cos(giro),
                        centro.y + dist * Math.sin(incl),
@@ -407,7 +461,7 @@ if escena:
       if (!arrastra) {{ return; }}
       var t = e.touches ? e.touches[0] : e;
       giro -= (t.clientX - px) * 0.006;
-      incl = Math.max(0.12, Math.min(1.45, incl + (t.clientY - py) * 0.005));
+      incl = Math.max(0.1, Math.min(1.45, incl + (t.clientY - py) * 0.005));
       px = t.clientX; py = t.clientY; situar(); pinta();
       if (e.touches) {{ e.preventDefault(); }}
     }}
@@ -420,7 +474,7 @@ if escena:
     window.addEventListener("touchend", arriba);
     ren.domElement.addEventListener("wheel", function (e) {{
       e.preventDefault();
-      dist = Math.max(radio * 0.35, Math.min(radio * 3,
+      dist = Math.max(radio * 0.3, Math.min(radio * 3,
              dist * (e.deltaY > 0 ? 1.1 : 0.9)));
       situar(); pinta();
     }}, {{ passive: false }});
@@ -431,20 +485,22 @@ if escena:
           o.classList.remove("activo"); }});
         b.classList.add("activo");
         var capa = b.dataset.capa;
-        if (mat.map) {{ mat.map.dispose(); }}
-        mat.map = textura(capa);
-        mat.color = new THREE.Color(capa === "relieve" ? 0x9a8674 : 0xffffff);
-        mat.needsUpdate = true; pinta();
+        textura(capa, function (t) {{
+          mat.map = t;
+          mat.color = new THREE.Color(capa === "relieve" ? 0xa08a76 : 0xffffff);
+          mat.needsUpdate = true; pinta();
+        }});
       }});
     }});
-    var chk = document.getElementById("ver-focos");
-    chk.addEventListener("change", function () {{
-      grupo.visible = chk.checked; pinta(); }});
+    document.getElementById("ver-focos").addEventListener("change", function () {{
+      gFocos.visible = this.checked; pinta(); }});
+    document.getElementById("ver-anillos").addEventListener("change", function () {{
+      gAnillos.visible = this.checked; pinta(); }});
 
     function pinta() {{ ren.render(esc, cam); }}
     window.addEventListener("resize", function () {{
       var w = raiz.clientWidth; ren.setSize(w, Math.round(w * 0.62));
-      cam.aspect = w / (w * 0.62); cam.updateProjectionMatrix(); pinta();
+      cam.aspect = 1 / 0.62; cam.updateProjectionMatrix(); pinta();
     }});
     pinta();
   }})();
@@ -811,6 +867,17 @@ ol.limites li {{ margin-bottom:.65rem; }}
   separadas por {img['dias_entre']} días, a {img['resolucion_m']} m.
   Trabajo académico; no reemplaza los reportes del COEN, INDECI, SERFOR ni SERNANP.</p>
 
+  <h3 class="sub-h">Qué dicen estas cifras juntas</h3>
+  <p>Las tres primeras se leen en cadena. <strong>{n(area['hectareas'])} ha ardieron</strong>
+  en un distrito periurbano de Pucallpa, y lo hicieron sobre
+  {principal['clase'].lower()} ({principal['pct']:.0f} % de lo quemado): no es un
+  incendio de bosque primario, es fuego de frontera agrícola. La temporada está
+  {his['variacion_pct']:+.0f} % sobre su promedio histórico, lo que descarta que sea un
+  año tranquilo, pero —como se ve en la sección siguiente— tampoco es el peor.
+  Y el {img['pixeles_utilizables_pct']} % de píxeles útiles es la cifra que condiciona a
+  todas las demás: <strong>lo que no se vio, no se contó</strong>, así que cada hectárea
+  reportada acá es un mínimo.</p>
+
   <h2 id="temporada"><span class="orden">02</span>Temporada · ¿es 2026 excepcional?</h2>
   <p>La misma ventana calendario ({his['ventana_calendario']}) en cada año, para que la
   comparación valga: <strong>{n(his['focos_2026'])} focos en 2026</strong> frente a un
@@ -827,6 +894,12 @@ ol.limites li {{ margin-bottom:.65rem; }}
   {n(lider['focos_2026'])} focos contra un promedio de {n(lider['promedio'])}
   ({lider['diferencia']:+,.0f}{"" if lider.get("z") is None else f", z = {lider['z']:+.1f}"}).</p>
   {anom_svg}
+  <p class="nota">Cómo leer la tabla: <strong>diferencia</strong> es cuántos focos más
+  (o menos) que su propio promedio, y la barrita de abajo compara esa diferencia entre
+  departamentos. El <strong>z</strong> dice lo mismo pero en desviaciones estándar, que
+  es lo que distingue un salto grande de uno <em>raro</em>: un departamento que siempre
+  varía mucho necesita más focos para sorprender. Por eso un z alto en un departamento
+  tranquilo pesa más que una diferencia absoluta grande en uno volátil.</p>
   <div class="scroll">
     <table>
       <thead><tr><th>Departamento</th><th class="num">2026</th>
@@ -848,6 +921,12 @@ ol.limites li {{ margin-bottom:.65rem; }}
     <span><i class="l-n7d"></i>3 a 7 días ({n(n7d)})</span>
     <span class="l-nota">proyección UTM 18S</span>
   </div>
+
+  <p class="nota">Lo que se ve de un vistazo: el fuego no está repartido por el país,
+  se concentra en una franja de selva alta y llanura amazónica —Ucayali, Junín, Loreto,
+  Huánuco— mientras la costa queda casi vacía. Esa geografía no es casual: coincide con
+  el frente agrícola y con la estación seca. El punto rojo intenso marca lo detectado en
+  las últimas 24 h, que es donde habría que mirar hoy.</p>
 
   <h3 class="sub-h">El zoom: Manantay</h3>
   <p>Los {n(inc['focos_en_distrito'])} focos de la semana dentro de Manantay, agrupados
@@ -956,6 +1035,42 @@ cruces sobre la misma mascara de quemado
 
   <p class="nota">Todas las fuentes son públicas. La única que pide clave es FIRMS, y se
   lee de <code>.env</code>, nunca del código. Todo corre en CPU.</p>
+
+  <h3 class="sub-h">Las cinco decisiones que mueven el resultado</h3>
+  <ol class="limites">
+    <li><strong>Descartar la confianza baja de VIIRS.</strong> Los focos marcados
+    <em>low</em> incluyen reflejos, antorchas de gas y fuentes industriales fijas.
+    Quitarlos reduce el conteo pero evita contar como incendio lo que nunca lo fue. Es
+    una decisión conservadora: prefiero perder fuego real antes que inventarlo.</li>
+    <li><strong>Agrupar a ≤ 1 km y ≤ 48 h.</strong> Con un radio mayor, varios incendios
+    se fusionan en uno gigante; con uno menor, un solo evento se parte en decenas. La
+    regla viene del monitor de clase, y es una convención, no una propiedad del dato.
+    Cambiarla cambia cuántos incendios hay, aunque no cuántas hectáreas ardieron.</li>
+    <li><strong>Elegir las imágenes por nube sobre el área, no sobre la escena.</strong>
+    Es la decisión que más calidad aporta y la más fácil de pasar por alto: una escena
+    con 95 % de nube puede estar despejada justo encima del incendio, y al revés. Por eso
+    la tabla de la sección 07 muestra las dos columnas.</li>
+    <li><strong>Fijar el umbral en dNBR ≥ {area['umbral_dnbr']}.</strong> Es la frontera
+    entre «quemado» y «no quemado», y el resultado pasa de {n([r for r in area['sensibilidad_umbral'] if abs(r['umbral dNBR'] - 0.10) < 1e-9][0]['hectáreas'])} a
+    {n([r for r in area['sensibilidad_umbral'] if abs(r['umbral dNBR'] - 0.44) < 1e-9][0]['hectáreas'])} ha
+    según dónde se ponga. Publico las cuatro para que nadie tenga que confiar en mi
+    palabra.</li>
+    <li><strong>Separar huella VIIRS de área quemada.</strong> La huella da
+    {n(inc['huella_viirs_ha'])} ha y el dNBR {n(area['hectareas'])}: una sobreestima a la
+    otra en {((inc['huella_viirs_ha'] / area['hectareas']) - 1) * 100:.0f} %. Presentarlas
+    como si fueran lo mismo es el error más común al usar focos satelitales, y es por eso
+    que acá van en tarjetas distintas.</li>
+  </ol>
+
+  <h3 class="sub-h">Qué haría falta para ir más lejos</h3>
+  <p>Tres cosas, en orden de lo que más cambiaría las conclusiones. <strong>Validación de
+  campo</strong>: sin ella los umbrales de severidad son una referencia prestada de otros
+  ecosistemas, no una medida calibrada para selva amazónica. <strong>Un producto de área
+  quemada</strong> (MODIS MCD64A1 o Sentinel-2 procesado tras el evento) que confirme el
+  perímetro una vez apagado el fuego, en vez de una imagen tomada con el incendio todavía
+  activo. Y <strong>las áreas naturales protegidas de SERNANP</strong>, que permitirían
+  decir si el fuego tocó territorio con protección legal — una pregunta que este tablero
+  todavía no responde, y que no voy a responder a ojo.</p>
 
   <h2>Cuatro cosas que no son lo mismo</h2>
   <div class="glosario">

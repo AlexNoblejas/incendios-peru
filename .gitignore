@@ -14,3 +14,5 @@ __pycache__/
 
 # el notebook ejecutado pesa 2.4 MB por las figuras incrustadas; las figuras
 # viven en figuras/ y el notebook limpio en notebooks/
+# escena3d.json pesa 1.5 MB y se regenera con scripts/exportar_3d.py
+outputs/escena3d.json

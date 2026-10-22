@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import datos
 
-MALLA = 140          # lado maximo de la malla 3D
+MALLA = 260          # lado maximo de la malla 3D (geometria)
 SALIDA = RAIZ / "outputs" / "escena3d.json"
 H = json.loads((RAIZ / "outputs" / "hallazgos.json").read_text(encoding="utf-8"))
 
@@ -94,6 +94,31 @@ z = reducir(dem.values, paso).astype("float32")
 z = np.nan_to_num(z, nan=float(np.nanmedian(z)))
 
 
+paleta = np.array([[58, 61, 67], [255, 222, 173], [255, 157, 77],
+                   [224, 34, 0], [132, 10, 0]], dtype="uint8")
+
+
+def rgb_full(ds, bandas, pmin=2, pmax=98):
+    """Igual que rgb() pero sin reducir: una banda por canal, a 20 m."""
+    capas = []
+    for b in bandas:
+        v = ds[b].values.astype("float32")
+        lo, hi = np.nanpercentile(v, pmin), np.nanpercentile(v, pmax)
+        capas.append(np.clip((v - lo) / max(hi - lo, 1e-6), 0, 1))
+    return (np.stack(capas, -1) * 255).astype("uint8")
+
+
+def severidad_full():
+    """Mapa de severidad a resolucion completa, con el gris de 'sin dato'."""
+    d = dnbr.values
+    idx = np.zeros(d.shape, dtype=int)
+    for i, c in enumerate([0.10, UMBRAL, 0.44, 0.66]):
+        idx[np.nan_to_num(d, nan=-9) >= c] = i + 1
+    out = paleta[idx]
+    out[~np.isfinite(d)] = [96, 99, 106]
+    return out
+
+
 def rgb(ds, bandas, pmin=2, pmax=98):
     """Composicion de tres bandas estirada por percentiles, a 0-255."""
     capas = []
@@ -104,19 +129,10 @@ def rgb(ds, bandas, pmin=2, pmax=98):
     return (np.stack(capas, -1) * 255).astype("uint8")
 
 
-natural = rgb(ds_d, ["B04", "B03", "B02"])           # color natural
-infrarrojo = rgb(ds_d, ["B08", "B04", "B03"])        # vegetacion en rojo
 d_small = reducir(dnbr.values, paso)
 
 # severidad -> color (las mismas clases del notebook)
 cortes = [0.10, UMBRAL, 0.44, 0.66]
-paleta = np.array([[60, 62, 68], [255, 217, 160], [255, 157, 77],
-                   [224, 34, 0], [140, 12, 0]], dtype="uint8")
-idx = np.zeros(d_small.shape, dtype=int)
-for i, c in enumerate(cortes):
-    idx[np.nan_to_num(d_small, nan=-9) >= c] = i + 1
-severidad = paleta[idx]
-severidad[~np.isfinite(d_small)] = [90, 92, 98]      # sin dato por nube
 
 # ---- focos con su altitud --------------------------------------------------
 xs, ys = dem["x"].values, dem["y"].values
@@ -130,6 +146,7 @@ for _, p in focos_m.iterrows():
     puntos.append({"u": round(j / (ancho - 1), 4), "v": round(i / (alto - 1), 4),
                    "z": round(float(dem.values[i, j]), 1),
                    "f": round(float(p.frp), 1),
+                   "dia": p.momento.strftime("%d-%b"),
                    "d": p.momento.strftime("%d-%b %H:%M")})
 
 alt = np.array([p["z"] for p in puntos]) if puntos else np.array([0.0])
@@ -156,6 +173,21 @@ por_dia["huella_acum_ha"] = acum
 por_dia["huella_nueva_ha"] = por_dia["huella_acum_ha"].diff().fillna(
     por_dia["huella_acum_ha"]).round(1)
 
+def png64(arr):
+    """Un arreglo RGB a PNG en base64, a resolucion nativa."""
+    import base64, io as _io
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.fromarray(arr, "RGB").save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+# Las texturas van a resolucion completa (no reducida): la nitidez de la
+# imagen es independiente de cuantos vertices tenga la malla.
+natural_full = rgb_full(ds_d, ["B04", "B03", "B02"])
+infra_full = rgb_full(ds_d, ["B08", "B04", "B03"])
+sev_full = severidad_full()
+
 escena = {
     "malla": {"ancho": int(z.shape[1]), "alto": int(z.shape[0]),
               "z": [round(float(v), 1) for v in z.ravel()],
@@ -163,11 +195,15 @@ escena = {
               "metros_x": round(float(abs(xs[-1] - xs[0])), 1),
               "metros_y": round(float(abs(ys[-1] - ys[0])), 1)},
     "texturas": {
-        "natural": natural.ravel().tolist(),
-        "infrarrojo": infrarrojo.ravel().tolist(),
-        "severidad": severidad.ravel().tolist(),
+        "natural": png64(natural_full),
+        "infrarrojo": png64(infra_full),
+        "severidad": png64(sev_full),
     },
     "focos": puntos,
+    "dias": sorted({p["dia"] for p in puntos},
+                   key=lambda d: [q["d"] for q in puntos
+                                  if q["dia"] == d][0]),
+    "pixel_viirs_m": 375,
     "metricas": {
         "altitud_min": round(float(alt.min()), 1),
         "altitud_max": round(float(alt.max()), 1),
@@ -190,7 +226,8 @@ if len(alt) > 1:
 
 SALIDA.write_text(json.dumps(escena, ensure_ascii=False), encoding="utf-8")
 print(f"{SALIDA.name}: {SALIDA.stat().st_size/1e6:.1f} MB · "
-      f"malla {z.shape[1]}x{z.shape[0]} · {len(puntos)} focos")
+      f"malla {z.shape[1]}x{z.shape[0]} · texturas "
+      f"{natural_full.shape[1]}x{natural_full.shape[0]} · {len(puntos)} focos")
 print(f"altitud {escena['metricas']['altitud_min']}-"
       f"{escena['metricas']['altitud_max']} m · pendiente mediana "
       f"{escena['metricas']['pendiente_mediana']}°")
