@@ -106,8 +106,14 @@ def focos_7d(sensor: str = "viirs-snpp",
         x0, y0, x1, y1 = PERU_BBOX
         df = df[df.longitude.between(x0, x1) & df.latitude.between(y0, y1)]
 
-    if "confidence" in df and confianza_minima == "n":
-        df = df[df["confidence"].astype(str).str.lower().isin(["n", "h"])]
+    # FIRMS escribe la confianza de dos formas segun el producto: letras
+    # (l/n/h) en la API por pais, palabras (low/nominal/high) en el CSV de
+    # 7 dias. Normalizamos a letra antes de filtrar.
+    if "confidence" in df:
+        conf = df["confidence"].astype(str).str.strip().str.lower()
+        df = df.assign(conf=conf.str[0])        # low->l, nominal->n, high->h
+        if confianza_minima == "n":
+            df = df[df["conf"].isin(["n", "h"])]
 
     df["momento"] = pd.to_datetime(
         df["acq_date"].astype(str) + " " +
@@ -166,7 +172,8 @@ def resumen_incendios(focos_agrupados: gpd.GeoDataFrame,
             "geometry": huella,
         })
     res = gpd.GeoDataFrame(filas, geometry="geometry", crs=CRS_METRICO)
-    centros = res.to_crs(4326).geometry.centroid
+    # el centroide se calcula en metros y SOLO despues se pasa a grados
+    centros = res.geometry.centroid.to_crs(4326)
     res["lon"], res["lat"] = centros.x.values, centros.y.values
     return res.sort_values("frp_total", ascending=False).reset_index(drop=True)
 
@@ -269,16 +276,94 @@ WORLDCOVER_CLASES = {
 }
 
 
-def worldcover(bbox, resolucion: int = 20):
-    """Mosaico de WorldCover 2021 sobre bbox, desde Planetary Computer."""
+def worldcover(bbox=None, resolucion: int = 20, like=None):
+    """
+    Mosaico de WorldCover 2021 desde Planetary Computer.
+
+    Con `like=<dataset de Sentinel-2>` se carga sobre EXACTAMENTE la misma
+    grilla: mismo CRS, mismo transform, mismo ancho y alto. Es la unica forma
+    de cruzar dos raster sin reproyectar despues, y evita el error clasico de
+    operar arrays que vienen de grillas distintas.
+
+    WorldCover es categorico, asi que el remuestreo es nearest-neighbor
+    (el de odc.stac por defecto): promediar codigos de clase no significa nada.
+    """
     import odc.stac
 
+    if like is None and bbox is None:
+        raise ValueError("pasa bbox o like")
+
+    caja = bbox if bbox is not None else tuple(
+        gpd.GeoSeries([_caja_de(like)], crs=like.odc.crs.to_epsg()
+                      if hasattr(like, "odc") else CRS_METRICO)
+        .to_crs(4326).total_bounds)
+
     items = list(catalogo().search(
-        collections=["esa-worldcover"], bbox=bbox).items())
-    items = [i for i in items if "2021" in str(i.datetime.year)] or items
-    ds = odc.stac.load(items, bands=["map"], bbox=bbox, crs=CRS_METRICO,
-                       resolution=resolucion, chunks={}).isel(time=0)
+        collections=["esa-worldcover"], bbox=caja).items())
+    items = [i for i in items if i.datetime.year == 2021] or items
+
+    if like is not None:
+        ds = odc.stac.load(items, bands=["map"], like=like,
+                           resampling="nearest", chunks={})
+    else:
+        ds = odc.stac.load(items, bands=["map"], bbox=caja, crs=CRS_METRICO,
+                           resolution=resolucion, resampling="nearest",
+                           chunks={})
+    if "time" in ds.dims:
+        ds = ds.isel(time=0)
     return ds["map"].compute()
+
+
+def _caja_de(ds):
+    """Bounding box (shapely) de un dataset cargado con odc.stac."""
+    from shapely.geometry import box as _box
+    x, y = ds["x"].values, ds["y"].values
+    return _box(float(x.min()), float(y.min()), float(x.max()), float(y.max()))
+
+
+def misma_grilla(a, b) -> bool:
+    """
+    Comprueba que dos raster comparten grilla antes de operarlos juntos:
+    mismo alto, mismo ancho y mismas coordenadas. Si esto falla, cualquier
+    cruce posterior devuelve basura.
+    """
+    import numpy as _np
+    return (a.shape == b.shape
+            and _np.allclose(a["x"].values, b["x"].values)
+            and _np.allclose(a["y"].values, b["y"].values))
+
+
+def inspeccionar(ds, nombre: str = "raster") -> None:
+    """
+    Lo que hay que mirar ANTES de operar sobre cualquier raster: CRS, tamano,
+    bandas, nodata, dtype, extension, resolucion, pixeles validos, min y max.
+    Saltarse este paso es donde se esconden los errores que despues no se
+    explican.
+    """
+    import numpy as _np
+
+    print(f"=== {nombre} ===")
+    try:
+        print(f"CRS          : {ds.odc.crs}")
+    except Exception:
+        print("CRS          : (no declarado por el accesor odc)")
+    bandas = list(ds.data_vars) if hasattr(ds, "data_vars") else [ds.name]
+    print(f"bandas       : {len(bandas)}  {bandas}")
+    x, y = ds["x"].values, ds["y"].values
+    rx = abs(float(x[1] - x[0])) if len(x) > 1 else float("nan")
+    ry = abs(float(y[1] - y[0])) if len(y) > 1 else float("nan")
+    print(f"ancho x alto : {len(x)} x {len(y)}  ({len(x) * len(y):,} pixeles)")
+    print(f"resolucion   : {rx:.1f} x {ry:.1f} m")
+    print(f"extension    : x [{x.min():,.0f}, {x.max():,.0f}]  "
+          f"y [{y.min():,.0f}, {y.max():,.0f}]")
+    for b in bandas:
+        v = (ds[b] if hasattr(ds, "data_vars") else ds).values
+        validos = _np.isfinite(v) if v.dtype.kind == "f" else _np.ones_like(v, bool)
+        nv = int(validos.sum())
+        print(f"  {b:5s} dtype {str(v.dtype):8s} nodata/NaN "
+              f"{v.size - nv:,} ({1 - nv / v.size:.1%})  "
+              f"validos {nv:,}" + (f"  min {v[validos].min():,.4g} "
+                                   f"max {v[validos].max():,.4g}" if nv else ""))
 
 
 def que_se_quemo(cobertura, mascara_quemado, resolucion: int = 20) -> pd.DataFrame:
@@ -359,3 +444,143 @@ def open_buildings(area, confianza_min: float = 0.70) -> gpd.GeoDataFrame:
         return gpd.GeoDataFrame(columns=OB_COLUMNAS, geometry=[], crs="EPSG:4326")
     return gpd.GeoDataFrame(pd.concat(partes, ignore_index=True),
                             geometry="geometry", crs="EPSG:4326")
+
+
+# --------------------------------------------------------------------------
+# 7 · Serie historica FIRMS 2012-2025 — ¿es 2026 un año excepcional?
+# --------------------------------------------------------------------------
+# El archivo de FIRMS se consulta por area y rango de fechas. La clave sale
+# de .env (nunca se escribe en el codigo ni se sube a git).
+FIRMS_AREA = ("https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
+              "{key}/{src}/{area}/{dias}/{desde}")
+
+# Mismo satelite (Suomi-NPP) en los dos casos; distinto procesamiento.
+# NO son intercambiables en silencio: SP esta reprocesado y validado, NRT es
+# de tiempo casi real. La comparacion historica lo dice explicitamente.
+FIRMS_ARCHIVO = "VIIRS_SNPP_SP"    # 2012 -> hace ~3 meses
+FIRMS_RECIENTE = "VIIRS_SNPP_NRT"  # ultimos meses
+
+AREA_PERU = "-81.5,-18.5,-68.5,0"  # oeste,sur,este,norte
+
+
+def map_key() -> str:
+    """Lee FIRMS_MAP_KEY de .env o del entorno. Nunca la imprime."""
+    import os
+
+    clave = os.environ.get("FIRMS_MAP_KEY")
+    if not clave:
+        env = RAIZ / ".env"
+        if env.exists():
+            for linea in env.read_text(encoding="utf-8").splitlines():
+                if linea.strip().startswith("FIRMS_MAP_KEY="):
+                    clave = linea.split("=", 1)[1].strip()
+                    break
+    if not clave:
+        raise RuntimeError(
+            "Falta FIRMS_MAP_KEY. Copia .env.example como .env y pon tu clave "
+            "(gratis en https://firms.modaps.eosdis.nasa.gov/api/map_key/).")
+    return clave
+
+
+def focos_ventana(desde: str, dias: int = 10, anio_reciente: int = 2026,
+                  area: str = AREA_PERU) -> pd.DataFrame:
+    """
+    Focos en una ventana de hasta 10 dias (limite del servicio), para el
+    Peru. `desde` en formato YYYY-MM-DD.
+
+    Devuelve tambien la columna `procesamiento` (SP o NRT), para que la
+    comparacion historica nunca mezcle sensores sin decirlo.
+    """
+    anio = int(desde[:4])
+    src = FIRMS_RECIENTE if anio >= anio_reciente else FIRMS_ARCHIVO
+    destino = CACHE / f"firms_area_{src}_{desde}_{dias}d.csv"
+
+    if not destino.exists():
+        url = FIRMS_AREA.format(key=map_key(), src=src, area=area,
+                                dias=min(dias, 10), desde=desde)
+        r = requests.get(url, timeout=300)
+        r.raise_for_status()
+        cuerpo = r.text
+        if len(cuerpo) < 60 or "latitude" not in cuerpo[:200].lower():
+            raise RuntimeError(f"FIRMS devolvio algo inesperado: {cuerpo[:200]}")
+        destino.write_text(cuerpo, encoding="utf-8")
+
+    df = pd.read_csv(destino)
+    df.columns = [c.lower() for c in df.columns]
+    df["procesamiento"] = "NRT" if src.endswith("NRT") else "SP"
+    df["anio"] = anio
+    return df
+
+
+def serie_historica(mes: int, dia: int, dias: int = 10,
+                    anios=range(2012, 2027),
+                    confianza_minima: str = "n") -> pd.DataFrame:
+    """
+    La MISMA ventana calendario en cada año: del `dia`/`mes` a `dias` dias
+    despues, para cada año de `anios`. Esa es la unica comparacion honesta —
+    un 2026 incompleto nunca se compara contra años completos.
+
+    Devuelve un GeoDataFrame con el año y el departamento de cada foco.
+    """
+    partes = []
+    for anio in anios:
+        desde = f"{anio}-{mes:02d}-{dia:02d}"
+        try:
+            partes.append(focos_ventana(desde, dias))
+        except Exception as e:
+            print(f"  {anio}: sin datos ({type(e).__name__}) — se excluye, "
+                  f"no se rellena")
+    if not partes:
+        raise RuntimeError("Ningun año devolvio datos")
+
+    df = pd.concat(partes, ignore_index=True)
+    if "confidence" in df and confianza_minima == "n":
+        conf = df["confidence"].astype(str).str.strip().str.lower()
+        df = df[conf.str[0].isin(["n", "h"])]
+
+    gdf = gpd.GeoDataFrame(
+        df.reset_index(drop=True),
+        geometry=gpd.points_from_xy(df.longitude, df.latitude),
+        crs="EPSG:4326")
+
+    dep = distritos()[["departamento", "geometry"]]
+    return gpd.sjoin(gdf, dep, how="inner", predicate="within").drop(
+        columns="index_right")
+
+
+def anomalia_departamental(serie: gpd.GeoDataFrame,
+                           anio_foco: int = 2026) -> pd.DataFrame:
+    """
+    Por departamento: focos del año en curso frente a su propia historia.
+    Incluye z-score y el puesto que ocupa el año en su serie, porque un
+    porcentaje solo no dice si el salto es raro para ESE departamento.
+    """
+    conteo = (serie.groupby(["departamento", "anio"]).size()
+                   .rename("focos").reset_index())
+
+    hist = conteo[conteo.anio < anio_foco]
+    actual = (conteo[conteo.anio == anio_foco]
+              .set_index("departamento")["focos"])
+
+    res = (hist.groupby("departamento")["focos"]
+               .agg(promedio="mean", mediana="median", maximo="max",
+                    desvio="std", anios="size")
+               .reset_index())
+    res["focos_" + str(anio_foco)] = res["departamento"].map(actual).fillna(0)
+
+    act = res[f"focos_{anio_foco}"]
+    res["diferencia"] = act - res["promedio"]
+    res["variacion_pct"] = (act / res["promedio"].replace(0, np.nan) - 1) * 100
+    res["z"] = (act - res["promedio"]) / res["desvio"].replace(0, np.nan)
+
+    # puesto de este año dentro de su propia serie (1 = el mas alto)
+    puestos = []
+    for _, f in res.iterrows():
+        serie_dep = hist[hist.departamento == f.departamento]["focos"].tolist()
+        serie_dep.append(f[f"focos_{anio_foco}"])
+        orden = sorted(serie_dep, reverse=True)
+        puestos.append(orden.index(f[f"focos_{anio_foco}"]) + 1)
+    res["puesto_en_su_serie"] = puestos
+    res["de_n_anios"] = res["anios"] + 1
+
+    return res.sort_values("diferencia", ascending=False).reset_index(drop=True)

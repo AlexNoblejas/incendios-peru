@@ -1,20 +1,22 @@
 # geo + raster
-geopandas>=1.0
+geopandas>=0.14
 rasterio>=1.3
 rasterstats>=0.19
 rioxarray>=0.15
 shapely>=2.0
-# acceso a Planetary Computer (Sentinel-2, WorldCover)
-pystac-client>=0.8
+# Microsoft Planetary Computer (Sentinel-2, ESA WorldCover)
+pystac-client>=0.7
 planetary-computer>=1.0
 odc-stac>=0.3
-# análisis
+# analisis
 pandas>=2.0
-numpy>=1.26
-scikit-learn>=1.4
+numpy>=1.24
+scikit-learn>=1.3
 # mapas y figuras
-matplotlib>=3.8
-folium>=0.17
-mapclassify>=2.6
-# descargas
+matplotlib>=3.7
+folium>=0.14
+mapclassify>=2.5
+# descargas y notebook
 requests>=2.31
+jupyter
+nbconvert
