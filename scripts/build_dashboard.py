@@ -159,6 +159,55 @@ def mapa_svg(m, ancho=640, alto=560, margen=14):
     return "".join(o)
 
 
+NAC = RAIZ / "outputs" / "mapa_nacional.json"
+nacional = json.loads(NAC.read_text(encoding="utf-8")) if NAC.exists() else None
+
+
+def mapa_pais(m, ancho=640, alto=720, margen=12):
+    """Los focos de toda la semana sobre los limites departamentales."""
+    if not m:
+        return "<p class='vacio'>Falta outputs/mapa_nacional.json.</p>"
+    x0, y0, x1, y1 = m["limites"]
+    escala = min((ancho - 2 * margen) / (x1 - x0),
+                 (alto - 2 * margen) / (y1 - y0))
+    dx = margen + ((ancho - 2 * margen) - (x1 - x0) * escala) / 2
+    dy = margen + ((alto - 2 * margen) - (y1 - y0) * escala) / 2
+    px = lambda x: dx + (x - x0) * escala
+    py = lambda y: dy + (y1 - y) * escala
+
+    o = [f'<svg viewBox="0 0 {ancho} {alto}" class="mapa" role="img" '
+         f'aria-label="Focos de calor en el Perú, últimos 7 días">',
+         '<rect width="100%" height="100%" class="m-fondo"/>']
+
+    for d in sorted(m["departamentos"], key=lambda d: -d["focos"]):
+        clase = "m-dep-alto" if d["focos"] >= 200 else "m-dep"
+        for anillo in d["anillos"]:
+            camino = "M" + "L".join(f"{px(x):.0f},{py(y):.0f}"
+                                    for x, y in anillo) + "Z"
+            o.append(f'<path d="{camino}" class="{clase}">'
+                     f'<title>{d["nombre"]} · {d["focos"]:,} focos</title></path>')
+
+    # los mas recientes se dibujan al final, para que queden encima
+    for f in sorted(m["focos"], key=lambda f: -f["h"]):
+        clase = ("m-n24" if f["h"] <= 24 else
+                 "m-n72" if f["h"] <= 72 else "m-n7d")
+        o.append(f'<circle cx="{px(f["x"]):.0f}" cy="{py(f["y"]):.0f}" '
+                 f'r="{1.5 if f["h"] > 24 else 2.1}" class="{clase}"/>')
+
+    km = 200000 * escala
+    bx, by = ancho - margen - km - 6, alto - margen - 10
+    o.append(f'<line x1="{bx:.0f}" y1="{by:.0f}" x2="{bx+km:.0f}" y2="{by:.0f}" '
+             f'class="m-escala"/><text x="{bx+km/2:.0f}" y="{by-6:.0f}" '
+             f'text-anchor="middle" class="m-escala-eti">200 km</text>')
+    o.append("</svg>")
+    return "".join(o)
+
+
+n24 = sum(1 for f in (nacional or {}).get("focos", []) if f["h"] <= 24)
+n72 = sum(1 for f in (nacional or {}).get("focos", []) if 24 < f["h"] <= 72)
+n7d = sum(1 for f in (nacional or {}).get("focos", []) if f["h"] > 72)
+mapa_pais_html = mapa_pais(nacional)
+
 mapa_html = mapa_svg(mapa)
 inc_radio = exp["radio_viviendas_m"]
 
@@ -245,12 +294,23 @@ cand_filas = "".join(
                             ("después", img["candidatas_despues"]))
     for c in lista)
 
+maxdif = max(abs(d["diferencia"]) for d in his["por_departamento"]) or 1
+
+
+def microbarra(v, maximo, pos="mb-mas", neg="mb-menos"):
+    """Una barra dentro de la celda: el signo decide el lado y el color."""
+    ancho = min(abs(v) / maximo * 46, 46)
+    lado = pos if v >= 0 else neg
+    return (f'<span class="mb"><span class="{lado}" '
+            f'style="width:{ancho:.0f}%"></span></span>')
+
+
 dep_filas = "".join(
     f'<tr><td>{d["departamento"].title()}</td>'
     f'<td class="num">{n(d["focos_2026"])}</td>'
     f'<td class="num">{n(d["promedio"], 1)}</td>'
-    f'<td class="num">{d["diferencia"]:+,.0f}</td>'
-    f'<td class="num">{firmado(d.get("z"))}</td>'
+    f'<td class="num">{d["diferencia"]:+,.0f}{microbarra(d["diferencia"], maxdif)}</td>'
+    f'<td class="num"><span class="pill {"p-alto" if (d.get("z") or 0) >= 1 else "p-bajo" if (d.get("z") or 0) < 0 else "p-medio"}">{firmado(d.get("z"))}</span></td>'
     f'<td class="num">{d["puesto_en_su_serie"]} / {d["de_n_anios"]}</td></tr>'
     for d in his["por_departamento"][:10])
 
@@ -322,6 +382,41 @@ strong {{ color:var(--tinta); }}
 .g-anio {{ font:500 10.5px var(--texto); fill:var(--tinta-3); }}
 .g-anio-foco {{ fill:var(--brasa); font-weight:700; }}
 
+.barra {{ position:sticky; top:env(safe-area-inset-top,0px); z-index:20;
+  display:flex; flex-wrap:wrap; align-items:center; gap:.1rem .9rem;
+  background:rgba(18,14,12,.94); border-bottom:1px solid var(--linea);
+  padding:.6rem max(16px,env(safe-area-inset-left,0px));
+  font-size:.82rem; backdrop-filter:blur(8px); }}
+.barra .marca {{ font-weight:700; color:var(--tinta); margin-right:.5rem;
+  display:flex; align-items:center; gap:.45rem; }}
+.barra .punto {{ width:9px; height:9px; border-radius:50%;
+  background:var(--brasa); flex:none; }}
+.barra a {{ color:var(--tinta-2); text-decoration:none; padding:.2rem 0;
+  border-bottom:1.5px solid transparent; }}
+.barra a:hover {{ color:var(--brasa); border-bottom-color:var(--brasa); }}
+body::before {{ content:""; position:fixed; inset:0 0 auto;
+  height:env(safe-area-inset-top,0px); z-index:21; background:var(--fondo); }}
+
+.m-dep {{ fill:var(--panel-2); stroke:var(--linea); stroke-width:.7; }}
+.m-dep-alto {{ fill:#2b211a; stroke:var(--tinta-3); stroke-width:.8; }}
+.m-n24 {{ fill:#ff2d00; }}
+.m-n72 {{ fill:#ff9d4d; fill-opacity:.9; }}
+.m-n7d {{ fill:#ffd9a0; fill-opacity:.65; }}
+.l-n24 {{ background:#ff2d00; }}
+.l-n72 {{ background:#ff9d4d; }}
+.l-n7d {{ background:#ffd9a0; }}
+
+.mb {{ display:block; height:3px; margin-top:3px; background:var(--linea);
+  border-radius:2px; overflow:hidden; }}
+.mb span {{ display:block; height:100%; border-radius:2px; }}
+.mb-mas {{ background:var(--brasa); }}
+.mb-menos {{ background:var(--frio); }}
+.pill {{ display:inline-block; padding:.05rem .4rem; border-radius:3px;
+  font-size:.82rem; font-weight:700; }}
+.p-alto {{ background:rgba(255,122,69,.18); color:var(--brasa); }}
+.p-medio {{ color:var(--tinta-2); }}
+.p-bajo {{ background:rgba(91,157,201,.16); color:var(--frio); }}
+
 .mapa {{ width:100%; height:auto; margin:.9rem 0 .4rem;
   border:1px solid var(--linea); border-radius:4px; }}
 .m-fondo {{ fill:var(--panel); }}
@@ -392,13 +487,23 @@ ol.limites li {{ margin-bottom:.65rem; }}
   font-size:.79rem; color:var(--tinta-3); max-width:70ch; }}
 </style>
 
+<nav class="barra">
+  <span class="marca"><i class="punto"></i>Fuego en Manantay</span>
+  <a href="#resumen">Resumen</a>
+  <a href="#temporada">Temporada</a>
+  <a href="#departamentos">Departamentos</a>
+  <a href="#mapa">Mapa</a>
+  <a href="#incendio">El incendio</a>
+  <a href="#metodo">Fuentes y método</a>
+</nav>
+
 <div class="hoja">
   <p class="eyebrow">{H['departamento'].title()} · {H['provincia'].title()} · UBIGEO {H['ubigeo']}</p>
   <h1>Fuego en Manantay</h1>
   <p class="lede">Cuánto se quemó, qué se quemó, a cuántas construcciones llegó — y si
   esta semana de octubre es excepcional frente a catorce años de la misma ventana.</p>
 
-  <h2><span class="orden">01</span>Resumen</h2>
+  <h2 id="resumen"><span class="orden">01</span>Resumen</h2>
   <div class="cifras">
     <div class="tarjeta">
       <div class="dato acento">{n(area['hectareas'])}<span class="unidad"> ha</span></div>
@@ -428,7 +533,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   separadas por {img['dias_entre']} días, a {img['resolucion_m']} m.
   Trabajo académico; no reemplaza los reportes del COEN, INDECI, SERFOR ni SERNANP.</p>
 
-  <h2><span class="orden">02</span>Temporada · ¿es 2026 excepcional?</h2>
+  <h2 id="temporada"><span class="orden">02</span>Temporada · ¿es 2026 excepcional?</h2>
   <p>La misma ventana calendario ({his['ventana_calendario']}) en cada año, para que la
   comparación valga: <strong>{n(his['focos_2026'])} focos en 2026</strong> frente a un
   promedio de {n(his['promedio_2012_2025'])}. Es el puesto
@@ -439,7 +544,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   El NRT no está revalidado, así que parte de la diferencia puede venir del
   procesamiento y no del fuego.</p>
 
-  <h2><span class="orden">03</span>Departamentos · quién explica la diferencia</h2>
+  <h2 id="departamentos"><span class="orden">03</span>Departamentos · quién explica la diferencia</h2>
   <p>La mayor anomalía absoluta es <strong>{lider['departamento'].title()}</strong>:
   {n(lider['focos_2026'])} focos contra un promedio de {n(lider['promedio'])}
   ({lider['diferencia']:+,.0f}{"" if lider.get("z") is None else f", z = {lider['z']:+.1f}"}).</p>
@@ -453,7 +558,20 @@ ol.limites li {{ margin-bottom:.65rem; }}
     </table>
   </div>
 
-  <h2><span class="orden">04</span>El mapa</h2>
+  <h2 id="mapa"><span class="orden">04</span>El mapa</h2>
+  <h3 class="sub-h">Dónde arde el país</h3>
+  <p>Los {n(nacional["total_focos"]) if nacional else "—"} focos de calor de los últimos
+  siete días, sobre los límites departamentales. Los departamentos con 200 focos o más
+  van resaltados; pasa el cursor para ver el conteo de cada uno.</p>
+  {mapa_pais_html}
+  <div class="leyenda">
+    <span><i class="l-n24"></i>últimas 24 h ({n(n24)})</span>
+    <span><i class="l-n72"></i>1 a 3 días ({n(n72)})</span>
+    <span><i class="l-n7d"></i>3 a 7 días ({n(n7d)})</span>
+    <span class="l-nota">proyección UTM 18S</span>
+  </div>
+
+  <h3 class="sub-h">El zoom: Manantay</h3>
   <p>Los {n(inc['focos_en_distrito'])} focos de la semana dentro de Manantay, agrupados
   en {inc['incendios_en_distrito']} incendios. El tamaño de cada punto es su potencia
   radiativa; pasa el cursor para ver la hora y los megavatios.</p>
@@ -474,7 +592,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   <p class="nota">En amarillo, los píxeles con dNBR ≥ {area['umbral_dnbr']}. En blanco,
   lo que quedó bajo nube en alguna de las dos fechas y por tanto no entra al cálculo.</p>
 
-  <h2><span class="orden">05</span>Atención prioritaria · el incendio medido</h2>
+  <h2 id="incendio"><span class="orden">05</span>Atención prioritaria · el incendio medido</h2>
   <p>En Manantay, {inc['focos_en_distrito']} focos se agruparon en
   <strong>{inc['incendios_en_distrito']} incendios</strong> con la regla de ≤ 1 km y
   ≤ 48 h. El de mayor energía concentró {inc['n_focos']} focos y
@@ -531,7 +649,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   y construcción.</p>
   {parrafo_exposicion}
 
-  <h2><span class="orden">08</span>Fuentes y método</h2>
+  <h2 id="metodo"><span class="orden">08</span>Fuentes y método</h2>
   <div class="cadena">focos VIIRS S-NPP, 7 dias (NASA FIRMS)
   |- confianza >= nominal            descarta reflejos y fuentes fijas
   |- sjoin con distritos INEI         {n(nac['focos_7d'])} focos, {n(nac['distritos_con_fuego'])} distritos con fuego
