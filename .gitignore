@@ -11,3 +11,6 @@ __pycache__/
 
 # credenciales
 .env
+
+# el notebook ejecutado pesa 2.4 MB por las figuras incrustadas; las figuras
+# viven en figuras/ y el notebook limpio en notebooks/

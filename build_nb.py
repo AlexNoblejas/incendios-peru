@@ -762,10 +762,12 @@ hallazgos = {
     "area_quemada": {
         "umbral_dnbr": UMBRAL_QUEMADO,
         "hectareas": round(ha_quemadas, 1),
+        # double_precision alto: los umbrales son 0.27/0.44/0.66 y redondearlos
+        # a un decimal los convertia en 0.3/0.4/0.7 en el README y el tablero.
         "por_severidad": json.loads(sev.to_json(orient="records",
-                                                double_precision=1)),
+                                                double_precision=4)),
         "sensibilidad_umbral": json.loads(sens.to_json(orient="records",
-                                                       double_precision=1)),
+                                                       double_precision=4)),
     },
     "que_se_quemo": json.loads(tabla_cob.to_json(orient="records",
                                                  double_precision=1)),

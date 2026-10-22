@@ -1,0 +1,425 @@
+{
+  "distrito": "Manantay",
+  "provincia": "CORONEL PORTILLO",
+  "departamento": "UCAYALI",
+  "ubigeo": "250107",
+  "corte": "2026-10-22 02:00 UTC",
+  "nacional": {
+    "focos_7d": 4380,
+    "ventana": [
+      "2026-10-14 05:12:00+00:00",
+      "2026-10-21 18:58:00+00:00"
+    ],
+    "departamento_mas_focos": "UCAYALI",
+    "focos_ese_departamento": 791,
+    "puesto_manantay": 6,
+    "distritos_con_fuego": 449
+  },
+  "historico": {
+    "ventana_dias": 10,
+    "ventana_calendario": "12-10 + 10 días",
+    "anios_disponibles": [
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025,
+      2026
+    ],
+    "anios_faltantes": [],
+    "focos_2026": 3907,
+    "promedio_2012_2025": 2616.2,
+    "variacion_pct": 49.3,
+    "puesto_2026": 2,
+    "de_n_anios": 15,
+    "departamentos_sobre_su_promedio": 15,
+    "de_n_departamentos": 25,
+    "mayor_anomalia": {
+      "departamento": "UCAYALI",
+      "focos_2026": 935,
+      "promedio": 524.4,
+      "diferencia": 410.6,
+      "z": 1.34
+    },
+    "serie_anual": {
+      "2012": 2063,
+      "2013": 1657,
+      "2014": 2992,
+      "2015": 2687,
+      "2016": 3010,
+      "2017": 2439,
+      "2018": 1393,
+      "2019": 1646,
+      "2020": 3165,
+      "2021": 3064,
+      "2022": 3216,
+      "2023": 2575,
+      "2024": 5345,
+      "2025": 1375,
+      "2026": 3907
+    },
+    "por_departamento": [
+      {
+        "departamento": "UCAYALI",
+        "promedio": 524.43,
+        "mediana": 452.5,
+        "maximo": 1436,
+        "desvio": 307.25,
+        "anios": 14,
+        "focos_2026": 935.0,
+        "diferencia": 410.57,
+        "variacion_pct": 78.29,
+        "z": 1.34,
+        "puesto_en_su_serie": 2,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "JUNIN",
+        "promedio": 215.0,
+        "mediana": 214.5,
+        "maximo": 333,
+        "desvio": 81.28,
+        "anios": 14,
+        "focos_2026": 460.0,
+        "diferencia": 245.0,
+        "variacion_pct": 113.95,
+        "z": 3.01,
+        "puesto_en_su_serie": 1,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "ANCASH",
+        "promedio": 27.07,
+        "mediana": 16.5,
+        "maximo": 72,
+        "desvio": 23.32,
+        "anios": 14,
+        "focos_2026": 187.0,
+        "diferencia": 159.93,
+        "variacion_pct": 590.77,
+        "z": 6.86,
+        "puesto_en_su_serie": 1,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "APURIMAC",
+        "promedio": 60.07,
+        "mediana": 26.0,
+        "maximo": 497,
+        "desvio": 127.36,
+        "anios": 14,
+        "focos_2026": 217.0,
+        "diferencia": 156.93,
+        "variacion_pct": 261.24,
+        "z": 1.23,
+        "puesto_en_su_serie": 2,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "CUSCO",
+        "promedio": 150.36,
+        "mediana": 156.5,
+        "maximo": 378,
+        "desvio": 93.83,
+        "anios": 14,
+        "focos_2026": 291.0,
+        "diferencia": 140.64,
+        "variacion_pct": 93.54,
+        "z": 1.5,
+        "puesto_en_su_serie": 2,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "HUANUCO",
+        "promedio": 284.43,
+        "mediana": 257.5,
+        "maximo": 526,
+        "desvio": 129.67,
+        "anios": 14,
+        "focos_2026": 402.0,
+        "diferencia": 117.57,
+        "variacion_pct": 41.34,
+        "z": 0.91,
+        "puesto_en_su_serie": 4,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "AREQUIPA",
+        "promedio": 31.93,
+        "mediana": 31.0,
+        "maximo": 75,
+        "desvio": 20.96,
+        "anios": 14,
+        "focos_2026": 131.0,
+        "diferencia": 99.07,
+        "variacion_pct": 310.29,
+        "z": 4.73,
+        "puesto_en_su_serie": 1,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "HUANCAVELICA",
+        "promedio": 40.07,
+        "mediana": 28.5,
+        "maximo": 158,
+        "desvio": 40.87,
+        "anios": 14,
+        "focos_2026": 112.0,
+        "diferencia": 71.93,
+        "variacion_pct": 179.5,
+        "z": 1.76,
+        "puesto_en_su_serie": 2,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "MOQUEGUA",
+        "promedio": 21.07,
+        "mediana": 15.5,
+        "maximo": 51,
+        "desvio": 16.44,
+        "anios": 14,
+        "focos_2026": 81.0,
+        "diferencia": 59.93,
+        "variacion_pct": 284.41,
+        "z": 3.64,
+        "puesto_en_su_serie": 1,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "PUNO",
+        "promedio": 68.71,
+        "mediana": 60.5,
+        "maximo": 189,
+        "desvio": 43.51,
+        "anios": 14,
+        "focos_2026": 120.0,
+        "diferencia": 51.29,
+        "variacion_pct": 74.64,
+        "z": 1.18,
+        "puesto_en_su_serie": 3,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "AYACUCHO",
+        "promedio": 56.43,
+        "mediana": 31.5,
+        "maximo": 227,
+        "desvio": 61.83,
+        "anios": 14,
+        "focos_2026": 103.0,
+        "diferencia": 46.57,
+        "variacion_pct": 82.53,
+        "z": 0.75,
+        "puesto_en_su_serie": 3,
+        "de_n_anios": 15
+      },
+      {
+        "departamento": "LORETO",
+        "promedio": 293.71,
+        "mediana": 272.0,
+        "maximo": 833,
+        "desvio": 186.37,
+        "anios": 14,
+        "focos_2026": 324.0,
+        "diferencia": 30.29,
+        "variacion_pct": 10.31,
+        "z": 0.16,
+        "puesto_en_su_serie": 6,
+        "de_n_anios": 15
+      }
+    ],
+    "aviso_sensores": "2012-2025 de VIIRS_SNPP_SP (archivo reprocesado); 2026 de VIIRS_SNPP_NRT (tiempo casi real). Mismo satélite, distinto procesamiento."
+  },
+  "incendio": {
+    "id": 1,
+    "n_focos": 51,
+    "focos_24h": 0,
+    "frp_total_mw": 643.9,
+    "frp_max_mw": 41.3,
+    "inicio": "2026-10-15 06:33:00+00:00",
+    "fin": "2026-10-16 18:49:00+00:00",
+    "horas_activo": 36.3,
+    "huella_viirs_ha": 1133.4,
+    "incendios_en_distrito": 15,
+    "focos_en_distrito": 86
+  },
+  "imagenes": {
+    "antes": {
+      "fecha": "2026-09-21",
+      "nubes_escena_pct": 1.098925,
+      "invalidos_aoi_pct": 1.2
+    },
+    "despues": {
+      "fecha": "2026-10-16",
+      "nubes_escena_pct": 7.879018,
+      "invalidos_aoi_pct": 9.9
+    },
+    "dias_entre": 25,
+    "pixeles_utilizables_pct": 89.0,
+    "resolucion_m": 20,
+    "fuego_activo_en_imagen_posterior": true,
+    "candidatas_antes": [
+      {
+        "fecha": 1791849600000,
+        "nubes_escena_pct": 69.56805,
+        "invalidos_aoi_pct": 100.0
+      },
+      {
+        "fecha": 1791676800000,
+        "nubes_escena_pct": 39.042917,
+        "invalidos_aoi_pct": 26.2
+      },
+      {
+        "fecha": 1791244800000,
+        "nubes_escena_pct": 28.089985,
+        "invalidos_aoi_pct": 17.8
+      },
+      {
+        "fecha": 1790985600000,
+        "nubes_escena_pct": 39.569676,
+        "invalidos_aoi_pct": 25.9
+      },
+      {
+        "fecha": 1790812800000,
+        "nubes_escena_pct": 99.993455,
+        "invalidos_aoi_pct": 100.0
+      },
+      {
+        "fecha": 1790380800000,
+        "nubes_escena_pct": 96.443629,
+        "invalidos_aoi_pct": 100.0
+      },
+      {
+        "fecha": 1790121600000,
+        "nubes_escena_pct": 59.818655,
+        "invalidos_aoi_pct": 68.3
+      },
+      {
+        "fecha": 1789948800000,
+        "nubes_escena_pct": 1.098925,
+        "invalidos_aoi_pct": 1.2
+      }
+    ],
+    "candidatas_despues": [
+      {
+        "fecha": 1792108800000,
+        "nubes_escena_pct": 7.879018,
+        "invalidos_aoi_pct": 9.9
+      },
+      {
+        "fecha": 1792540800000,
+        "nubes_escena_pct": 94.734454,
+        "invalidos_aoi_pct": 66.5
+      }
+    ]
+  },
+  "area_quemada": {
+    "umbral_dnbr": 0.27,
+    "hectareas": 891.5,
+    "por_severidad": [
+      {
+        "clase": "Rebrote",
+        "dnbr_min": null,
+        "dnbr_max": -0.1,
+        "hectareas": 211.7
+      },
+      {
+        "clase": "Sin cambio",
+        "dnbr_min": -0.1,
+        "dnbr_max": 0.1,
+        "hectareas": 6152.5
+      },
+      {
+        "clase": "Severidad baja",
+        "dnbr_min": 0.1,
+        "dnbr_max": 0.27,
+        "hectareas": 1502.7
+      },
+      {
+        "clase": "Severidad moderada-baja",
+        "dnbr_min": 0.27,
+        "dnbr_max": 0.44,
+        "hectareas": 584.2
+      },
+      {
+        "clase": "Severidad moderada-alta",
+        "dnbr_min": 0.44,
+        "dnbr_max": 0.66,
+        "hectareas": 304.7
+      },
+      {
+        "clase": "Severidad alta",
+        "dnbr_min": 0.66,
+        "dnbr_max": null,
+        "hectareas": 2.6
+      }
+    ],
+    "sensibilidad_umbral": [
+      {
+        "umbral dNBR": 0.1,
+        "hectáreas": 2394.2
+      },
+      {
+        "umbral dNBR": 0.27,
+        "hectáreas": 891.5
+      },
+      {
+        "umbral dNBR": 0.44,
+        "hectáreas": 307.3
+      },
+      {
+        "umbral dNBR": 0.66,
+        "hectáreas": 2.6
+      }
+    ]
+  },
+  "que_se_quemo": [
+    {
+      "clase": "Pastizal",
+      "hectareas": 655.6,
+      "pct": 73.5
+    },
+    {
+      "clase": "Bosque",
+      "hectareas": 214.7,
+      "pct": 24.1
+    },
+    {
+      "clase": "Humedal herbáceo",
+      "hectareas": 19.9,
+      "pct": 2.2
+    },
+    {
+      "clase": "Matorral",
+      "hectareas": 0.9,
+      "pct": 0.1
+    },
+    {
+      "clase": "Agua",
+      "hectareas": 0.2,
+      "pct": 0.0
+    },
+    {
+      "clase": "Área construida",
+      "hectareas": 0.2,
+      "pct": 0.0
+    }
+  ],
+  "exposicion": {
+    "poblacion_5km_worldpop2020": 49363,
+    "radio_poblacion_m": 5000,
+    "radio_viviendas_m": 1000,
+    "edificaciones_1km_openbuildings": 35,
+    "ha_construidas_1km": 0.2,
+    "edificaciones_aoi": 295
+  }
+}

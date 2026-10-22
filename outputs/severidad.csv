@@ -1,0 +1,7 @@
+clase,dnbr_min,dnbr_max,hectareas
+Rebrote,-inf,-0.1,211.68
+Sin cambio,-0.1,0.1,6152.52
+Severidad baja,0.1,0.27,1502.68
+Severidad moderada-baja,0.27,0.44,584.16
+Severidad moderada-alta,0.44,0.66,304.68
+Severidad alta,0.66,inf,2.64

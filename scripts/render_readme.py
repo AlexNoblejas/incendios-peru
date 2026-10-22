@@ -33,6 +33,25 @@ def tabla(filas, cols, alinea_num=True):
     return f"{cab}\n{sep}\n{cuerpo}"
 
 
+serie = {int(k): v for k, v in his["serie_anual"].items()}
+record = max(serie, key=serie.get) if serie else None
+
+cabeza = (f"""En la **misma ventana calendario** ({his['ventana_calendario']}) comparada
+año por año, 2026 registra **{n(his['focos_2026'])} focos** frente a un promedio
+2012–2025 de **{n(his['promedio_2012_2025'], 0)}**: **{his['variacion_pct']:+.0f} %**.""")
+
+if record is not None and record != 2026:
+    veredicto = (cabeza + f"""
+
+Pero **2026 no es el año récord**: es el puesto **{his['puesto_2026']} de
+{his['de_n_anios']}**, detrás de **{record}**, que en esta misma ventana registró
+{n(serie[record])} focos. La respuesta honesta al reto «¿año récord?» es que no: la
+temporada está claramente por encima de lo normal, y aun así hubo un octubre peor hace
+{2026 - record} año{"s" if 2026 - record != 1 else ""}.""")
+else:
+    veredicto = (cabeza + f""" Es el puesto **{his['puesto_2026']} de
+{his['de_n_anios']}** años de la serie: **el más alto registrado** en esta ventana.""")
+
 if SIN_EDIFICIOS:
     hallazgo_3 = f"""**3 · A {exp['radio_poblacion_m'] // 1000} km del incendio viven
 {n(exp['poblacion_5km_worldpop2020'])} personas** (WorldPop 2020, celdas de 1 km).
@@ -148,14 +167,12 @@ que **no** es área quemada— daba {n(inc['huella_viirs_ha'])} ha.
 
 ### Y el contexto: ¿es excepcional?
 
-En la **misma ventana calendario** ({his['ventana_calendario']}) comparada año por año,
-2026 registra **{n(his['focos_2026'])} focos** frente a un promedio 2012–2025 de
-**{n(his['promedio_2012_2025'], 0)}**: **{his['variacion_pct']:+.0f} %**, el puesto
-**{his['puesto_2026']} de {his['de_n_anios']}** años de la serie.
+{veredicto}
+
 {his['departamentos_sobre_su_promedio']} de {his['de_n_departamentos']} departamentos
 están por encima de su propio promedio, y la mayor anomalía absoluta es
 **{lider['departamento'].title()}** ({lider['diferencia']:+,.0f} focos sobre su promedio
-de {n(lider['promedio'], 0)}).
+de {n(lider['promedio'], 0)}{"" if lider.get("z") is None else f", z = {lider['z']:+.2f}"}).
 {aviso_anios}
 Esta semana, {nac['departamento_mas_focos'].title()} es el departamento con más focos del
 país ({n(nac['focos_ese_departamento'])} de {n(nac['focos_7d'])}), y Manantay es el
