@@ -36,6 +36,20 @@ def _bajar(url: str, destino: Path, timeout: int = 900) -> Path:
     return destino
 
 
+def unir(geoms):
+    """
+    Une geometrias en una sola.
+
+    geopandas renombro `unary_union` a `union_all()` en la version 1.0; el
+    entorno del curso puede tener cualquiera de las dos, asi que probamos la
+    nueva y caemos a la vieja.
+    """
+    try:
+        return geoms.union_all()
+    except AttributeError:
+        return geoms.unary_union
+
+
 def a_metros(gdf):
     return gdf.to_crs(CRS_METRICO)
 
@@ -156,7 +170,7 @@ def resumen_incendios(focos_agrupados: gpd.GeoDataFrame,
     g = a_metros(focos_agrupados)
     filas = []
     for iid, grupo in g.groupby("incendio_id"):
-        huella = grupo.buffer(buffer_m).union_all()
+        huella = unir(grupo.buffer(buffer_m))
         centro = huella.centroid
         filas.append({
             "incendio_id": iid,
@@ -435,7 +449,7 @@ def open_buildings(area, confianza_min: float = 0.70,
     if isinstance(area, gpd.GeoSeries):
         area = gpd.GeoDataFrame(geometry=area, crs=area.crs)
     area = area.to_crs("EPSG:4326")
-    union = area.union_all()
+    union = unir(area)
     minx, miny, maxx, maxy = union.bounds
 
     tiles = gpd.read_file(_bajar(OB_TILES, CACHE / "ob_tiles.geojson"))

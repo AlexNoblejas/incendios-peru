@@ -150,7 +150,7 @@ acum = []
 hasta = None
 for d in por_dia["dia"]:
     sel = agr[agr["momento"] <= agr.loc[agr.dia == d, "momento"].max()]
-    hasta = datos.a_metros(sel).buffer(375).union_all()
+    hasta = datos.unir(datos.a_metros(sel).buffer(375))
     acum.append(round(hasta.area / 1e4, 1))
 por_dia["huella_acum_ha"] = acum
 por_dia["huella_nueva_ha"] = por_dia["huella_acum_ha"].diff().fillna(
