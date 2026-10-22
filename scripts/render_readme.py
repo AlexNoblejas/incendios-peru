@@ -57,11 +57,15 @@ if img.get("fuego_activo_en_imagen_posterior"):
         "de por las nubes. Es la misma salvedad que el ejemplo de clase marcó como "
         "«fuego activo».\n")
 
+def lim(v, signo):
+    """Un límite de severidad; los extremos abiertos vienen como null del JSON."""
+    return ("−∞" if signo < 0 else "+∞") if v is None else f"{v:.2f}"
+
+
 severidad = tabla(
     [s for s in area["por_severidad"] if s["hectareas"] > 0],
     [("Clase", lambda s: s["clase"]),
-     ("dNBR", lambda s: f"{s['dnbr_min']:.2f} – {s['dnbr_max']:.2f}"
-      .replace("-inf", "−∞").replace("inf", "+∞")),
+     ("dNBR", lambda s: f"{lim(s['dnbr_min'], -1)} – {lim(s['dnbr_max'], +1)}"),
      ("Hectáreas", lambda s: n(s["hectareas"]))])
 
 sens = tabla(

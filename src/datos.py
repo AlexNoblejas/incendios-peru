@@ -329,12 +329,19 @@ def _caja_de(ds):
 def misma_grilla(a, b) -> bool:
     """
     Comprueba que dos raster comparten grilla antes de operarlos juntos:
-    mismo alto, mismo ancho y mismas coordenadas. Si esto falla, cualquier
-    cruce posterior devuelve basura.
+    mismo ancho, mismo alto y las mismas coordenadas en x e y. Si esto falla,
+    cualquier cruce posterior devuelve basura.
+
+    Sirve igual para un Dataset (varias bandas) o un DataArray (una), porque
+    la grilla vive en las coordenadas, no en la forma del arreglo.
     """
     import numpy as _np
-    return (a.shape == b.shape
-            and _np.allclose(a["x"].values, b["x"].values)
+
+    if a.sizes.get("x") != b.sizes.get("x"):
+        return False
+    if a.sizes.get("y") != b.sizes.get("y"):
+        return False
+    return (_np.allclose(a["x"].values, b["x"].values)
             and _np.allclose(a["y"].values, b["y"].values))
 
 

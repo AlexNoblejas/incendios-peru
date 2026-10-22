@@ -661,8 +661,16 @@ folium.GeoJson(
        .to_crs(4326).to_json(), name=f"Anillo {RADIO_VIVIENDAS_M} m",
     style_function=lambda f: {"color": "#c1440e", "weight": 1.5,
                               "dashArray": "6", "fillOpacity": 0.05}).add_to(m)
+# GeoJSON no sabe serializar Timestamps: las fechas van como texto.
+huellas = incendios.to_crs(4326).copy()
+for col in ("inicio", "fin"):
+    huellas[col] = huellas[col].dt.strftime("%d-%b %H:%M UTC")
+
 folium.GeoJson(
-    incendios.to_crs(4326).to_json(), name="Huella VIIRS (proxy)",
+    huellas.to_json(), name="Huella VIIRS (proxy)",
+    tooltip=folium.GeoJsonTooltip(
+        fields=["incendio_id", "n_focos", "frp_total", "inicio", "fin"],
+        aliases=["incendio", "focos", "FRP (MW)", "primer foco", "último foco"]),
     style_function=lambda f: {"color": "#7a1500", "weight": 1,
                               "fillOpacity": 0.25}).add_to(m)
 
