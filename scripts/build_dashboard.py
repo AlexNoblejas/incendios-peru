@@ -275,6 +275,12 @@ n7d = sum(1 for f in (nacional or {}).get("focos", []) if f["h"] > 72)
 if escena:
     # La malla y las texturas viajan como JSON embebido; three.js arma el
     # terreno en el navegador. Sin servidores: el HTML es autocontenido.
+    # Manantay es llano: con una exageracion fija el relieve no se veria.
+    # Se calcula para que el desnivel ocupe ~8% del ancho del terreno.
+    _M = escena["malla"]
+    _desnivel = max(_M["zmax"] - _M["zmin"], 0.1)
+    EXAG = round(min(max(0.08 * _M["metros_x"] / _desnivel, 1), 60), 1)
+
     datos_3d = json.dumps({
         "malla": escena["malla"],
         "texturas": escena["texturas"],
@@ -295,9 +301,13 @@ if escena:
       focos VIIRS</label>
   </div>
   <div id="lienzo3d" class="lienzo"></div>
-  <p class="nota" id="pista3d">Exageración vertical ×2,5 para que el relieve se
-  lea; el terreno aquí es casi llano. En «dNBR», el gris es lo que quedó sin dato
-  por nubes y los tonos cálidos son la severidad creciente.</p>
+  <p class="nota" id="pista3d"><strong>Exageración vertical ×{EXAG:.0f}</strong>, y no
+  es un capricho: entre el punto más bajo y el más alto del área hay solo
+  {_desnivel:.0f} m. Sin exagerar, la superficie sería una lámina plana. Ese es el
+  hallazgo de esta sección: en Manantay <strong>el relieve no explica nada</strong>
+  —el fuego no sube por una ladera, se extiende por una llanura—, al revés de lo que
+  pasa en los incendios de sierra. En «dNBR», el gris es lo que quedó sin dato por
+  nubes y los tonos cálidos son la severidad creciente.</p>
 
   <div class="cifras">
     <div class="tarjeta"><div class="dato">{n(met['altitud_min'])}–{n(met['altitud_max'])}<span class="unidad"> m</span></div>
@@ -308,14 +318,17 @@ if escena:
       <div class="pie">cobertura dominante de lo quemado</div></div>
   </div>
 
-  <h3 class="sub-h">El incendio, día por día</h3>
+  <h3 class="sub-h">Los {inc['incendios_en_distrito']} incendios de Manantay, día por día</h3>
+  <p class="nota">Estas tres series cubren los {inc['focos_en_distrito']} focos del
+  distrito, no solo el incendio principal: por eso la huella acumulada supera las
+  {n(inc['huella_viirs_ha'])} ha de ese incendio.</p>
   <div class="tres">
-    <div><h4>Huella acumulada</h4>{graf_acum}<p class="nota">hectáreas de huella
-      VIIRS acumulada; <strong>no</strong> es área quemada.</p></div>
+    <div><h4>Huella acumulada</h4>{graf_acum}<p class="nota">hectáreas de huella VIIRS
+      del distrito; <strong>no</strong> es área quemada.</p></div>
     <div><h4>Potencia radiativa</h4>{graf_frp}<p class="nota">megavatios sumados
       por día.</p></div>
-    <div><h4>Altitud de los focos</h4>{graf_alt}<p class="nota">franjas de 10 m;
-      el terreno es amazónico y casi llano.</p></div>
+    <div><h4>Altitud de los focos</h4>{graf_alt}<p class="nota">franjas de 10 m: los
+      86 focos caben en {met["altitud_max"] - met["altitud_min"]:.0f} m de desnivel.</p></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
@@ -325,7 +338,7 @@ if escena:
     var raiz = document.getElementById("lienzo3d");
     if (!raiz || typeof THREE === "undefined") {{ return; }}
     var D = JSON.parse(document.getElementById("escena-3d").textContent);
-    var M = D.malla, AN = M.ancho, AL = M.alto, EXAG = 2.5;
+    var M = D.malla, AN = M.ancho, AL = M.alto, EXAG = {EXAG};
 
     var ancho = raiz.clientWidth, alto = Math.round(ancho * 0.62);
     var ren = new THREE.WebGLRenderer({{ antialias: true }});
@@ -437,10 +450,12 @@ if escena:
   }})();
   </script>"""
 else:
-    bloque_3d = ('<p class="aviso">La escena 3D no está disponible: falta '
-                 '<code>outputs/escena3d.json</code>. Se genera con '
-                 '<code>python scripts/exportar_3d.py</code>.</p>')
+    bloque_3d = ""
 
+seccion_3d = ('<h2 id="tresd"><span class="orden">06</span>'
+              'El incendio sobre el terreno</h2>\n  ' + bloque_3d
+              if bloque_3d else "")
+nav_3d = '<a href="#tresd">En 3D</a>' if bloque_3d else ""
 mapa_pais_html = mapa_pais(nacional)
 
 mapa_html = mapa_svg(mapa)
@@ -755,7 +770,8 @@ ol.limites li {{ margin-bottom:.65rem; }}
   <a href="#temporada">Temporada</a>
   <a href="#departamentos">Departamentos</a>
   <a href="#mapa">Mapa</a>
-  <a href="#incendio">El incendio</a>\n  <a href="#tresd">En 3D</a>
+  <a href="#incendio">El incendio</a>
+  {nav_3d}
   <a href="#metodo">Fuentes y método</a>
 </nav>
 
@@ -878,8 +894,7 @@ ol.limites li {{ margin-bottom:.65rem; }}
   <strong>No son universales</strong>: dependen del ecosistema, del sensor, de las fechas
   y de una validación de campo que acá no existe.</p>
 
-  <h2 id="tresd"><span class="orden">06</span>El incendio sobre el terreno</h2>
-  {bloque_3d}
+  {seccion_3d}
 
   <h2><span class="orden">07</span>El número depende del umbral</h2>
   <p>La misma imagen, cuatro fronteras entre «quemado» y «no quemado». Reportamos
